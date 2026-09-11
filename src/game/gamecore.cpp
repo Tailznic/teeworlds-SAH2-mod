@@ -1,6 +1,7 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #include "gamecore.h"
+#include <engine/shared/config.h>
 
 const char *CTuningParams::m_apNames[] =
 {
@@ -213,7 +214,8 @@ void CCharacterCore::Tick(bool UseInput)
 					if(length(Dir) > 0.0001f)
 					{
 						vec2 Normal = normalize(vec2(Dir.y, -Dir.x));
-						vec2 BounceDir = normalize(m_HookDir - 2.0f * dot(m_HookDir, Normal) * Normal);
+						vec2 ReflectDir = m_HookDir - 2.0f * dot(m_HookDir, Normal) * Normal;
+								vec2 BounceDir = normalize(ReflectDir);
 						if(length(BounceDir) > 0.0001f)
 						{
 							m_HookDir = BounceDir;
