@@ -1893,12 +1893,6 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 	AddServerCommand("cmdlist", "show the cmd list", 0, CmdHelp);
 	if(m_Config->m_SvEmoteWheel || m_Config->m_SvEmotionalTees) AddServerCommand("emote", "enable custom emotes", "<emote type> <time in seconds>", CmdEmote);
 
-	// SAH commands
-	if(m_pController->UsesSahScoring())
-	{
-		AddServerCommand("sp", "toggle self-kill protection (protects your own frozen from being stolen)", 0, CmdSelfKillProtect);
-	}
-
 	//if(!data) // only load once
 		//data = load_data_from_memory(internal_data);
 
