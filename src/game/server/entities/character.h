@@ -72,6 +72,9 @@ public:
 	// (hook freezes enemies and unfreezes frozen teammates)
 	void OnHookedPlayer(class CCharacter *pFrom);
 
+	// SAH (Stole and Hook): the player that hooked (froze) this character, -1 = nobody
+	int GetFreezeOwnerID() const { return m_FreezeOwnerID; }
+
 	void SetEmote(int Emote, int Tick);
 
 	bool IsAlive() const { return m_Alive; }

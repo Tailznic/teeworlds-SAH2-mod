@@ -117,8 +117,9 @@ int CGameControllerSAH::OnCharacterDeath(class CCharacter *pVictim, class CPlaye
 
 		// the player who hooked (froze) the victim
 		CPlayer *pFreezer = 0;
-		if(pVictim->m_FreezeOwnerID >= 0 && pVictim->m_FreezeOwnerID < MAX_CLIENTS)
-			pFreezer = GameServer()->m_apPlayers[pVictim->m_FreezeOwnerID];
+		int FreezeOwnerID = pVictim->GetFreezeOwnerID();
+		if(FreezeOwnerID >= 0 && FreezeOwnerID < MAX_CLIENTS)
+			pFreezer = GameServer()->m_apPlayers[FreezeOwnerID];
 
 		// was the victim thrown into the spikes of the killer's own team?
 		bool OwnSpike = IsTeamplay() && ((pKiller->GetTeam() == TEAM_RED && Weapon == WEAPON_SPIKE_RED)
