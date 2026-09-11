@@ -75,6 +75,12 @@ public:
 		int m_UnfreezingHammerHits; //number of hammers to a frozen teammate
 		
 		int m_Shots; //the shots a player made
+
+		//SAH (Stole and Hook) stats
+		int m_SahScoreDelta; //direct score changes (steal kills, assists, penalties)
+		int m_Steals; //kills of enemies that were frozen by someone else
+		int m_StealAssists; //freezes that ended in a steal kill of a teammate
+		int m_OwnThrows; //throws of own frozen enemies (penalty)
 	} m_Stats;
 
 	enum eClientVersion {

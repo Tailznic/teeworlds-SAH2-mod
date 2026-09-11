@@ -375,6 +375,12 @@ void CPlayer::TryRespawn()
 }
 
 void CPlayer::CalcScore(){
+	if(GameServer()->m_pController->UsesSahScoring())
+	{
+		//SAH: rescues and direct SAH points (steal kills, assists and penalties)
+		m_Score = m_Stats.m_Unfreezes + m_Stats.m_SahScoreDelta;
+		return;
+	}
 	if(g_Config.m_SvScoreDisplay == 0){
 		m_Score = m_Stats.m_Kills + m_Stats.m_Unfreezes;
 		//TODO: make this configurable

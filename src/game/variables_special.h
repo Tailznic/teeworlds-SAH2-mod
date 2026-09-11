@@ -46,3 +46,6 @@ MACRO_CONFIG_INT(SvGrenadeDamageToHit, sv_grenade_damage_to_hit, 4, 0, 6, CFGFLA
 MACRO_CONFIG_INT(SvTrivia, sv_trivia, 1, 0, 1, CFGFLAG_SERVER, "Send trivia at round end.")
 
 MACRO_CONFIG_INT(SvPerWeaponReload, sv_per_weapon_reload, 1, 0, 1, CFGFLAG_SERVER, "Reload every weapon individually(allows switching weapons).")
+
+//SAH (Stole and Hook)
+MACRO_CONFIG_INT(SvSahDuelFallback, sv_sah_duel_fallback, 1, 0, 1, CFGFLAG_SERVER, "SAH: if the killer's team has only one active player, self-throws into enemy/neutral spikes are scored positive (duel mode). 0: self-throws are always penalized")

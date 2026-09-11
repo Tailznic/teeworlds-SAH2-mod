@@ -68,6 +68,10 @@ public:
 	void Freeze(int TimeInSec);
 	void Unfreeze(int pPlayerID);
 
+	// SAH (Stole and Hook): called on this character when someone's hook attached to it
+	// (hook freezes enemies and unfreezes frozen teammates)
+	void OnHookedPlayer(class CCharacter *pFrom);
+
 	void SetEmote(int Emote, int Tick);
 
 	bool IsAlive() const { return m_Alive; }
@@ -139,6 +143,9 @@ private:
 		int m_ActivationTick;
 		int m_Duration;
 	} m_Freeze;
+
+	// SAH (Stole and Hook): the player that frozen this character (-1 = nobody)
+	int m_FreezeOwnerID;
 
 	// killer, that frozen this character
 	struct {

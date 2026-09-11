@@ -1905,7 +1905,7 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 #undef CONTEXT_INIT_WITHOUT_CONFIG
 		m_pController = new CGameControllerFNG2(this);
 		
-	if(m_Config->m_SvEmoteWheel) m_pController->m_pGameType = "fng2+";
+	if(m_Config->m_SvEmoteWheel && !m_pController->UsesSahScoring()) m_pController->m_pGameType = "fng2+";
 
 	// create all entities from the game layer
 	CMapItemLayerTilemap *pTileMap = m_Layers.GameLayer();
@@ -1995,7 +1995,7 @@ void CGameContext::OnInit(IKernel *pKernel, IMap* pMap, CConfiguration* pConfigF
 #include "gamecontext_additional_gametypes.h"
 		m_pController = new CGameControllerFNG2(this, *pConfig);
 
-	if(m_Config->m_SvEmoteWheel) m_pController->m_pGameType = "fng2+";
+	if(m_Config->m_SvEmoteWheel && !m_pController->UsesSahScoring()) m_pController->m_pGameType = "fng2+";
 	
 	// create all entities from the game layer
 	CMapItemLayerTilemap *pTileMap = m_Layers.GameLayer();

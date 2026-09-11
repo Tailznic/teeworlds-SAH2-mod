@@ -48,6 +48,7 @@ CCharacter::CCharacter(CGameWorld *pWorld)
 	m_Health = 0;
 	m_Armor = 0;
 	m_Freeze.m_ActivationTick = 0;
+	m_FreezeOwnerID = -1;
 
 	m_InvincibleTick = 0;
 	m_Killer.m_KillerID = -1;
@@ -62,6 +63,7 @@ void CCharacter::Reset()
 bool CCharacter::Spawn(CPlayer *pPlayer, vec2 Pos)
 {
 	m_Freeze.m_ActivationTick = 0;
+	m_FreezeOwnerID = -1;
 
 	m_Killer.m_KillerID = -1;
 	m_Killer.m_uiKillerHookTicks = 0;
@@ -455,6 +457,7 @@ void CCharacter::Unfreeze(int pPlayerID) {
 	//Set Weapon to old one, and unfreeze
 	m_ActiveWeapon = m_LastWeapon;
 	m_Freeze.m_ActivationTick = 0;
+	m_FreezeOwnerID = -1;
 	m_Killer.m_uiKillerHookTicks = 0;
 	m_Killer.m_KillerID = m_pPlayer->GetCID();
 
@@ -484,6 +487,39 @@ void CCharacter::SetKiller(int pKillerID, unsigned int pHookTicks) {
 		m_Killer.m_uiKillerHookTicks = pHookTicks;
 		m_Killer.m_KillerID = pKillerID;
 	}
+}
+
+void CCharacter::OnHookedPlayer(CCharacter *pFrom)
+{
+	if(!pFrom || !pFrom->GetPlayer() || !GameServer()->m_pController->UsesSahScoring())
+		return;
+
+	CPlayer *pHookPlayer = pFrom->GetPlayer();
+
+	// hooking a teammate: rescue him instead of freezing
+	if(GameServer()->m_pController->IsTeamplay() && pHookPlayer->GetTeam() == m_pPlayer->GetTeam())
+	{
+		if(IsFrozen() && m_Freeze.m_ActivationTick != Server()->Tick())
+			Unfreeze(pHookPlayer->GetCID());
+		// non frozen teammates are just pulled, like in vanilla
+		return;
+	}
+
+	// enemies are frozen by the hook (replaces the laser in SAH)
+	if(IsFrozen())
+		return; // do not refresh the freeze timer, just drag the frozen tee
+	if(m_InvincibleTick != 0)
+		return; // spawn protection
+
+	Freeze(g_Config.m_SvHitFreeze);
+	m_FreezeOwnerID = pHookPlayer->GetCID();
+	Hit(pHookPlayer->GetCID(), WEAPON_RIFLE);
+
+	// feedback, like a laser freeze
+	pFrom->SetEmote(EMOTE_HAPPY, Server()->Tick() + Server()->TickSpeed());
+	GameServer()->CreateSound(m_Pos, SOUND_PLAYER_PAIN_SHORT);
+	m_EmoteType = EMOTE_PAIN;
+	m_EmoteStop = Server()->Tick() + 500 * Server()->TickSpeed() / 1000;
 }
 
 void CCharacter::OnPredictedInput(CNetObj_PlayerInput *pNewInput)
@@ -590,6 +626,18 @@ void CCharacter::Tick()
 
 	// handle Weapons
 	HandleWeapons();
+
+	// SAH: handle hook interactions (hook-freeze enemies / hook-unfreeze teammates)
+	if(m_Core.m_HookedPlayer != -1 && m_Core.m_HookedPlayer != m_LastHookedPlayer)
+	{
+		CPlayer *pHookedPlayer = GameServer()->m_apPlayers[m_Core.m_HookedPlayer];
+		if(pHookedPlayer)
+		{
+			CCharacter *pHookedChar = pHookedPlayer->GetCharacter();
+			if(pHookedChar && pHookedChar != this && pHookedChar->IsAlive())
+				pHookedChar->OnHookedPlayer(this);
+		}
+	}
 
 	// Previnput
 	m_PrevInput = m_Input;
@@ -753,6 +801,7 @@ void CCharacter::Die(int Killer, int Weapon)
 	// we got to wait 0.5 secs before respawning
 	m_pPlayer->m_RespawnTick = Server()->Tick() + Server()->TickSpeed() / 2;
 	int ModeSpecial = GameServer()->m_pController->OnCharacterDeath(this, GameServer()->m_apPlayers[Killer], Weapon);
+	m_FreezeOwnerID = -1;
 
 	char aBuf[256];
 	str_format(aBuf, sizeof(aBuf), "kill killer='%d:%s' victim='%d:%s' weapon=%d special=%d",
@@ -799,6 +848,7 @@ void CCharacter::DieSpikes(int pPlayerID, int spikes_flag) {
 	if (!IsFrozen() || pPlayerID == m_pPlayer->GetCID()) Weapon = WEAPON_WORLD;
 
 	int ModeSpecial = GameServer()->m_pController->OnCharacterDeath(this, GameServer()->m_apPlayers[pPlayerID], Weapon);
+	m_FreezeOwnerID = -1;
 
 	//if needed the mod can tell the character to not die with modespecial = -1
 	if(ModeSpecial >= 0){
@@ -958,7 +1008,8 @@ void CCharacter::TakeHammerHit(CCharacter* pFrom)
 	if (pPlayer && (GameServer()->m_pController->IsTeamplay() && pPlayer->GetTeam() == m_pPlayer->GetTeam())) {
 		m_Killer.m_uiKillerHookTicks = 0;
 		m_Killer.m_KillerID = m_pPlayer->GetCID();
-		if (IsFrozen()) {
+		// SAH: the hammer cannot unfreeze teammates, only the hook can rescue them
+		if (IsFrozen() && !GameServer()->m_pController->UsesSahScoring()) {
 			if (((float)m_Freeze.m_Duration - (float)(Server()->Tick() - m_Freeze.m_ActivationTick - 1) / (float)Server()->TickSpeed()) < 3.f) {
 				Unfreeze(pPlayer->GetCID());
 			}
