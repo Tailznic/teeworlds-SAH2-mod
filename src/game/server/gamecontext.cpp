@@ -1449,6 +1449,20 @@ void CGameContext::CmdEmote(CGameContext* pContext, int pClientID, const char** 
 	}
 }
 
+void CGameContext::CmdSelfKillProtect(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum){
+	(void)pArgs; (void)ArgNum;
+	CPlayer* pPlayer = pContext->m_apPlayers[pClientID];
+	if(!pPlayer) return;
+	
+	// Toggle self-kill protection
+	pPlayer->m_Stats.m_SelfKillProtected = !pPlayer->m_Stats.m_SelfKillProtected;
+	
+	if(pPlayer->m_Stats.m_SelfKillProtected)
+		pContext->SendChatTarget(pClientID, "[SAH] Защита от кражи своего: ВКЛ ✓ (вы не сможете украсть своего зафризного)");
+	else
+		pContext->SendChatTarget(pClientID, "[SAH] Защита от кражи своего: ВЫКЛ ✗ (вы сможете украсть своего зафризного)");
+}
+
 
 void CGameContext::ConTuneParam(IConsole::IResult *pResult, void *pUserData)
 {
@@ -1879,6 +1893,12 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 	AddServerCommand("cmdlist", "show the cmd list", 0, CmdHelp);
 	if(m_Config->m_SvEmoteWheel || m_Config->m_SvEmotionalTees) AddServerCommand("emote", "enable custom emotes", "<emote type> <time in seconds>", CmdEmote);
 
+	// SAH commands
+	if(m_pController->UsesSahScoring())
+	{
+		AddServerCommand("sp", "toggle self-kill protection (protects your own frozen from being stolen)", 0, CmdSelfKillProtect);
+	}
+
 	//if(!data) // only load once
 		//data = load_data_from_memory(internal_data);
 
@@ -2152,9 +2172,10 @@ void CGameContext::SendRoundStats() {
 			bestKDPlayerIDs.SetBitOfPosition(i);
 		}
 
-		float accuracy = (float)p->m_Stats.m_Kills / (float)(p->m_Stats.m_Shots == 0 ? 1 : p->m_Stats.m_Shots);
-		if (bestAccuracy < accuracy) {
-			bestAccuracy = accuracy;
+		float Accuracy = (float)p->m_Stats.m_Shots > 0.0f ? (float)p->m_Stats.m_Hits / (float)p->m_Stats.m_Shots : 0.0f;
+		Accuracy = min(1.0f, Accuracy); // accuracy cannot exceed 100%
+		if (bestAccuracy < Accuracy) {
+			bestAccuracy = Accuracy;
 			bestAccuarcyPlayerIDs = 0;
 			bestAccuarcyPlayerIDs.SetBitOfPosition(i);
 		}

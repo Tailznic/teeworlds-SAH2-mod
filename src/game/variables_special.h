@@ -48,4 +48,11 @@ MACRO_CONFIG_INT(SvTrivia, sv_trivia, 1, 0, 1, CFGFLAG_SERVER, "Send trivia at r
 MACRO_CONFIG_INT(SvPerWeaponReload, sv_per_weapon_reload, 1, 0, 1, CFGFLAG_SERVER, "Reload every weapon individually(allows switching weapons).")
 
 //SAH (Stole and Hook)
-MACRO_CONFIG_INT(SvSahDuelFallback, sv_sah_duel_fallback, 1, 0, 1, CFGFLAG_SERVER, "SAH: if the killer's team has only one active player, self-throws into enemy/neutral spikes are scored positive (duel mode). 0: self-throws are always penalized")
+MACRO_CONFIG_INT(SvSahDuelFallback, sv_sah_duel_fallback, 1, 0, 1, CFGFLAG_SERVER, "SAH: если в команде 1 игрок, самоубийства в чужие/нейтральные шипы дают +n. 0: самоубийства всегда штрафуются")
+MACRO_CONFIG_INT(SvSahSelfKillProtect, sv_sah_self_kill_protect, 1, 0, 1, CFGFLAG_SERVER, "SAH: глобальная защита от кражи своего зафризного (1=вкл). Каждый игрок может переключить командой /sp")
+MACRO_CONFIG_INT(SvSahTeamPenalty, sv_sah_team_penalty, 50, 0, 100, CFGFLAG_SERVER, "SAH: штраф для команды при оплошности в процентах (50 = половина от n)")
+MACRO_CONFIG_INT(SvSahInversion, sv_sah_inversion, 1, 0, 1, CFGFLAG_SERVER, "SAH: инверсия убийств (1=свои зафризные дают -n, 0=как в FNG дают +n)")
+MACRO_CONFIG_INT(SvSahShotsToUnfreeze, sv_sah_shots_to_unfreeze, 2, 1, 10, CFGFLAG_SERVER, "SAH: выстрелов пистолета для разморозки тиммейта")
+MACRO_CONFIG_INT(SvSahHookableHook, sv_sah_hookable_hook, 1, 0, 1, CFGFLAG_SERVER, "SAH: unhookable тайлы отскакивают хук как лазер (1=да, 0=стандарт)")
+MACRO_CONFIG_INT(SvSahHookBounces, sv_sah_hook_bounces, 3, 1, 5, CFGFLAG_SERVER, "SAH: максимальное количество отскоков хука")
+MACRO_CONFIG_INT(SvSahScoreLimit, sv_sah_score_limit, 2000, 0, 2000, CFGFLAG_SERVER, "SAH: максимальный лимит очков (0 = без лимита, до 2000)")

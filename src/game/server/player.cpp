@@ -26,6 +26,9 @@ CPlayer::CPlayer(CGameContext *pGameServer, int ClientID, int Team)
 
 	m_ChatSpamCount = 0;
 	
+	// SAH: self-kill protection is on by default
+	m_Stats.m_SelfKillProtected = 1;
+	
 	m_Emotion = EMOTE_NORMAL;
 	m_EmotionDuration = 0;
 
@@ -379,6 +382,9 @@ void CPlayer::CalcScore(){
 	{
 		//SAH: rescues and direct SAH points (steal kills, assists and penalties)
 		m_Score = m_Stats.m_Unfreezes + m_Stats.m_SahScoreDelta;
+		//SAH: score limit (0 = no limit)
+		if(g_Config.m_SvSahScoreLimit > 0)
+			m_Score = clamp(m_Score, 0, g_Config.m_SvSahScoreLimit);
 		return;
 	}
 	if(g_Config.m_SvScoreDisplay == 0){

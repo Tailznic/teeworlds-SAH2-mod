@@ -31,11 +31,10 @@ void CGameControllerSAH::OnCharacterSpawn(class CCharacter *pChr)
 	// default health
 	pChr->IncreaseHealth(10);
 
-	// SAH weapons: a hammer to smash frozen enemies into the spikes
-	// and a toy gun that does nothing (variety). There is no laser,
+	// SAH weapons: a pistol that pushes frozen enemies and unfreezes teammates
+	// (2 shots to fully unfreeze). There is no hammer and no laser,
 	// the hook does the freezing.
-	pChr->GiveWeapon(WEAPON_HAMMER, -1);
-	pChr->GiveWeapon(WEAPON_GUN, 10);
+	pChr->GiveWeapon(WEAPON_GUN, -1);
 }
 
 bool CGameControllerSAH::OnEntity(int Index, vec2 Pos)
@@ -128,6 +127,11 @@ int CGameControllerSAH::OnCharacterDeath(class CCharacter *pVictim, class CPlaye
 		// did the killer freeze the victim himself?
 		bool SelfThrow = (pFreezer == pKiller);
 
+		// SAH: when the kill inversion is disabled, self-throws work like normal kills
+		// (you can score your own frozen enemies, like in classic FNG)
+		if(SelfThrow && g_Config.m_SvSahInversion == 0)
+			SelfThrow = false;
+
 		if(SelfThrow || OwnSpike)
 		{
 			// duel fallback: a team with a single active player cannot be stolen from,
@@ -148,9 +152,11 @@ int CGameControllerSAH::OnCharacterDeath(class CCharacter *pVictim, class CPlaye
 			else
 			{
 				// mistake: -n for the killer and his whole team pays for it
+				// (team penalty is scaled by sv_sah_team_penalty, default 50%)
 				pKiller->m_Stats.m_OwnThrows++;
 				pKiller->m_Stats.m_SahScoreDelta -= PlayerScore;
-				m_aTeamscore[pKiller->GetTeam()] -= TeamScore;
+				int TeamPenalty = (TeamScore * g_Config.m_SvSahTeamPenalty + 50) / 100;
+				m_aTeamscore[pKiller->GetTeam()] -= TeamPenalty;
 				if(pKiller->GetCharacter()) GameServer()->MakeLaserTextPoints(pKiller->GetCharacter()->m_Pos, pKiller->GetCID(), -PlayerScore);
 			}
 		}

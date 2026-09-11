@@ -81,6 +81,7 @@ public:
 		int m_Steals; //kills of enemies that were frozen by someone else
 		int m_StealAssists; //freezes that ended in a steal kill of a teammate
 		int m_OwnThrows; //throws of own frozen enemies (penalty)
+		int m_SelfKillProtected; //personal self-kill protection (1 = on, can be toggled with /sp)
 	} m_Stats;
 
 	enum eClientVersion {

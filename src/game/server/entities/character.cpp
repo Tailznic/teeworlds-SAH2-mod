@@ -496,6 +496,27 @@ void CCharacter::OnHookedPlayer(CCharacter *pFrom)
 
 	CPlayer *pHookPlayer = pFrom->GetPlayer();
 
+	// SAH: personal self-kill protection - you cannot hook your OWN frozen victim
+	// (this prevents accidentally throwing your own frozen enemy into spikes for -n)
+	if(IsFrozen() && m_FreezeOwnerID == pHookPlayer->GetCID())
+	{
+		if(g_Config.m_SvSahSelfKillProtect && pHookPlayer->m_Stats.m_SelfKillProtected)
+		{
+			// protection does not work when the killer's team has only one player
+			int OwnTeamPlayers = 0;
+			for(int i = 0; i < MAX_CLIENTS; ++i)
+				if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->GetTeam() == pHookPlayer->GetTeam())
+					++OwnTeamPlayers;
+			if(OwnTeamPlayers > 1)
+			{
+				// refuse the hook: detach it and warn the player
+				pFrom->m_Core.m_HookedPlayer = -1;
+				GameServer()->SendChatTarget(pHookPlayer->GetCID(), "[SAH] Своего нельзя красть! (/sp — отключить защиту)");
+				return;
+			}
+		}
+	}
+
 	// hooking a teammate: rescue him instead of freezing
 	if(GameServer()->m_pController->IsTeamplay() && pHookPlayer->GetTeam() == m_pPlayer->GetTeam())
 	{
@@ -903,7 +924,16 @@ void CCharacter::DieSpikes(int pPlayerID, int spikes_flag) {
 		}
 
 		// a nice sound
-		GameServer()->CreateSound(m_Pos, SOUND_PLAYER_DIE);
+		if(GameServer()->m_pController->UsesSahScoring())
+		{
+			// SAH: a sad crying sound instead of the normal death sound
+			GameServer()->CreateSound(m_Pos, SOUND_TEE_CRY);
+			// blood effect: a few red bursts splashing out of the dying tee
+			for(int i = 0; i < 6; ++i)
+				GameServer()->CreateExplosion(m_Pos + vec2(frandom()*28.0f - 14.0f, frandom()*28.0f - 14.0f), m_pPlayer->GetCID(), WEAPON_HAMMER, true);
+		}
+		else
+			GameServer()->CreateSound(m_Pos, SOUND_PLAYER_DIE);
 		if(g_Config.m_SvSmoothFreezeMode)
 			GameServer()->SendTuningParams(m_pPlayer->GetCID());
 
@@ -945,6 +975,33 @@ void CCharacter::Hit(int Killer, int Weapon)
 bool CCharacter::TakeDamage(vec2 Force, int Dmg, int From, int Weapon)
 {
 	m_Core.m_Vel += Force;
+
+	// SAH: pistol shots push like a hammer and unfreeze teammates (sv_sah_shots_to_unfreeze shots)
+	if(GameServer()->m_pController->UsesSahScoring() && Weapon == WEAPON_GUN)
+	{
+		CPlayer *pPlayer = GameServer()->m_apPlayers[From];
+		// push like a hammer for enemies
+		vec2 Dir;
+		if(pPlayer && pPlayer->GetCharacter())
+			Dir = normalize(m_Pos - pPlayer->GetCharacter()->m_Pos);
+		else
+			Dir = vec2(0.f, -1.f);
+		m_Core.m_Vel += vec2(0.f, -1.f) + normalize(Dir + vec2(0.f, -1.1f)) * 10.0f;
+
+		// unfreeze a frozen teammate with pistol shots
+		if(IsFrozen() && pPlayer && GameServer()->m_pController->IsTeamplay() && pPlayer->GetTeam() == m_pPlayer->GetTeam())
+		{
+			int Shots = max(1, g_Config.m_SvSahShotsToUnfreeze);
+			int Step = max(1, m_Freeze.m_Duration / Shots);
+			m_Freeze.m_Duration -= Step;
+
+			// feedback: a small "thaw" tick
+			GameServer()->CreateSound(m_Pos, SOUND_WEAPON_SWITCH);
+
+			if(m_Freeze.m_Duration <= 0)
+				Unfreeze(From);
+		}
+	}
 
 	CPlayer *pPlayer = GameServer()->m_apPlayers[From];
 
