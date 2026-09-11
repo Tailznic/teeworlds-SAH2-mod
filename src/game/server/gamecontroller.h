@@ -162,7 +162,5 @@ public:
 	//SAH (Stole and Hook): true for the SAH gamemode, used to enable hook based freezing/scoring
 	virtual bool UsesSahScoring() const { return false; }
 };
-	virtual bool IsWrongSpike(int Team, int SpikeFlags);
-};
 
 #endif
