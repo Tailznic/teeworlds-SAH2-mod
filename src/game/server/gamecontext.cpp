@@ -2179,7 +2179,7 @@ void CGameContext::SendRoundStats() {
 			bestAccuarcyPlayerIDs = 0;
 			bestAccuarcyPlayerIDs.SetBitOfPosition(i);
 		}
-		else if (bestAccuracy == accuracy) {
+		else if (bestAccuracy == Accuracy) {
 			bestAccuarcyPlayerIDs.SetBitOfPosition(i);
 		}
 	}
