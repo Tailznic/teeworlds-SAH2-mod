@@ -196,6 +196,7 @@ public:
 	static void CmdWhisper(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum);
 	static void CmdConversation(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum);
 	static void CmdHelp(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum);
+	static void CmdStatus(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum);
 	static void CmdEmote(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum);
 	static void CmdSelfKillProtect(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum);
 	

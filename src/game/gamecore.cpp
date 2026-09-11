@@ -206,7 +206,27 @@ void CCharacterCore::Tick(bool UseInput)
 		if(Hit)
 		{
 			if(Hit&CCollision::COLFLAG_NOHOOK)
+			{
+				if(g_Config.m_SvSahHookableHook && g_Config.m_SvSahHookBounces > 0)
+				{
+					vec2 Dir = normalize(NewPos - m_HookPos);
+					if(length(Dir) > 0.0001f)
+					{
+						vec2 Normal = normalize(vec2(Dir.y, -Dir.x));
+						vec2 BounceDir = normalize(m_HookDir - 2.0f * dot(m_HookDir, Normal) * Normal);
+						if(length(BounceDir) > 0.0001f)
+						{
+							m_HookDir = BounceDir;
+							m_HookPos = NewPos + BounceDir * 4.0f;
+							NewPos = m_HookPos + BounceDir * m_pWorld->m_Tuning.m_HookFireSpeed;
+							m_HookState = HOOK_FLYING;
+							m_TriggeredEvents |= COREEVENT_HOOK_HIT_NOHOOK;
+							return;
+						}
+					}
+				}
 				GoingToRetract = true;
+			}
 			else
 				GoingToHitGround = true;
 		}
