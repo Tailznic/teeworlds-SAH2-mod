@@ -2016,6 +2016,12 @@ void CGameContext::OnInit(IKernel *pKernel, IMap* pMap, CConfiguration* pConfigF
 		m_pController = new CGameControllerFNG2(this, *pConfig);
 
 	if(m_Config->m_SvEmoteWheel && !m_pController->UsesSahScoring()) m_pController->m_pGameType = "fng2+";
+
+	// SAH commands must be registered only after the controller is initialized.
+	if(m_pController->UsesSahScoring())
+	{
+		AddServerCommand("sp", "toggle self-kill protection (protects your own frozen from being stolen)", 0, CmdSelfKillProtect);
+	}
 	
 	// create all entities from the game layer
 	CMapItemLayerTilemap *pTileMap = m_Layers.GameLayer();
