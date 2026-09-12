@@ -214,8 +214,8 @@ void CCharacterCore::Tick(bool UseInput)
 					if(length(Dir) > 0.0001f)
 					{
 						vec2 Normal = normalize(vec2(Dir.y, -Dir.x));
-						vec2 ReflectDir = m_HookDir - 2.0f * dot(m_HookDir, Normal) * Normal;
-								vec2 BounceDir = normalize(ReflectDir);
+						vec2 ReflectDir = m_HookDir - Normal * (2.0f * dot(m_HookDir, Normal));
+						vec2 BounceDir = normalize(ReflectDir);
 						if(length(BounceDir) > 0.0001f)
 						{
 							m_HookDir = BounceDir;
