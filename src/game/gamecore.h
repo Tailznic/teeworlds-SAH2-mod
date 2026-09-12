@@ -185,6 +185,7 @@ public:
 	int m_HookTick;
 	int m_HookState;
 	int m_HookedPlayer;
+	int m_HookBounces; // SAH: remaining hook bounces off unhookable tiles (like a laser)
 
 	int m_Jumped;
 

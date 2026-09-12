@@ -71,6 +71,7 @@ void CCharacterCore::Reset()
 	m_HookTick = 0;
 	m_HookState = HOOK_IDLE;
 	m_HookedPlayer = -1;
+	m_HookBounces = 0;
 	m_Jumped = 0;
 	m_TriggeredEvents = 0;
 	
@@ -148,6 +149,7 @@ void CCharacterCore::Tick(bool UseInput)
 				m_HookDir = TargetDirection;
 				m_HookedPlayer = -1;
 				m_HookTick = 0;
+				m_HookBounces = max(0, g_Config.m_SvSahHookBounces); // SAH: fresh bounce budget for every hook
 				m_TriggeredEvents |= COREEVENT_HOOK_LAUNCH;
 				++m_CoreStats.m_NumHooks;
 			}
