@@ -1470,8 +1470,7 @@ void CGameContext::CmdPause(CGameContext* pContext, int pClientID, const char** 
 	if(pChr && p->m_Paused)
 	{
 		pChr->ResetInput();
-		pChr->m_Core.m_HookState = HOOK_IDLE;
-		pChr->m_Core.m_HookedPlayer = -1;
+		pChr->ResetHook();
 	}
 
 	// silent: standard clients have this bound, don't spam the chat

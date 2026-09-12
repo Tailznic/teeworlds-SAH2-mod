@@ -46,6 +46,8 @@ public:
 	void OnPredictedInput(CNetObj_PlayerInput *pNewInput);
 	void OnDirectInput(CNetObj_PlayerInput *pNewInput);
 	void ResetInput();
+	// SAH: publicly detach the hook (m_Core is private)
+	void ResetHook();
 
 	int GetActiveWeaponForReload();
 	void FireWeapon();

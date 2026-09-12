@@ -614,6 +614,15 @@ void CCharacter::ResetInput()
 	m_LatestPrevInput = m_LatestInput = m_Input;
 }
 
+// SAH: detach the hook (public wrapper around the private m_Core, used by /pause)
+void CCharacter::ResetHook()
+{
+	m_Core.m_HookState = HOOK_IDLE;
+	m_Core.m_HookedPlayer = -1;
+	m_Core.m_HookPos = m_Pos;
+	m_Core.m_HookDir = vec2(0.f, 0.f);
+}
+
 void CCharacter::PreTick()
 {
 	if (m_InvincibleTick > 0) 
