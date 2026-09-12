@@ -53,6 +53,6 @@ MACRO_CONFIG_INT(SvSahSelfKillProtect, sv_sah_self_kill_protect, 1, 0, 1, CFGFLA
 MACRO_CONFIG_INT(SvSahTeamPenalty, sv_sah_team_penalty, 50, 0, 100, CFGFLAG_SERVER, "SAH: штраф для команды при оплошности в процентах (50 = половина от n)")
 MACRO_CONFIG_INT(SvSahInversion, sv_sah_inversion, 1, 0, 1, CFGFLAG_SERVER, "SAH: инверсия убийств (1=свои зафризные дают -n, 0=как в FNG дают +n)")
 MACRO_CONFIG_INT(SvSahShotsToUnfreeze, sv_sah_shots_to_unfreeze, 4, 1, 10, CFGFLAG_SERVER, "SAH: выстрелов пистолета для разморозки тиммейта")
-MACRO_CONFIG_INT(SvSahHookableHook, sv_sah_hookable_hook, 1, 0, 1, CFGFLAG_SERVER, "SAH: unhookable тайлы отскакивают хук как лазер (1=да, 0=стандарт)")
+MACRO_CONFIG_INT(SvSahHookableHook, sv_sah_hookable_hook, 0, 0, 1, CFGFLAG_SERVER, "SAH: unhookable тайлы отскакивают хук как лазер (1=да, 0=стандарт)")
 MACRO_CONFIG_INT(SvSahHookBounces, sv_sah_hook_bounces, 3, 1, 5, CFGFLAG_SERVER, "SAH: максимальное количество отскоков хука")
 MACRO_CONFIG_INT(SvSahScoreLimit, sv_sah_score_limit, 2000, 0, 2000, CFGFLAG_SERVER, "SAH: максимальный лимит очков (0 = без лимита, до 2000)")
