@@ -199,6 +199,8 @@ public:
 	static void CmdStatus(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum);
 	static void CmdEmote(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum);
 	static void CmdSelfKillProtect(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum);
+	static void CmdPause(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum);
+	static void CmdSpec(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum);
 	
 	IServer *Server() const { return m_pServer; }
 	class IConsole *Console() { return m_pConsole; }
@@ -249,6 +251,7 @@ public:
 
 	// helper functions
 	void MakeLaserTextPoints(vec2 pPos, int pOwner, int pPoints);
+	void MakeLaserTextFreeze(vec2 pPos, int pOwner, int pSeconds);
 	
 	void CreateDamageInd(vec2 Pos, float AngleMod, int Amount, int Team, int FromPlayerID = -1);
 	void CreateSoundTeam(vec2 Pos, int Sound, int TeamID, int FromPlayerID = -1);

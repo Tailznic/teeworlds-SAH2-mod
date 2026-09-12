@@ -165,7 +165,16 @@ void CCharacter::HandleFreeze()
 
 
 	if ((Server()->Tick() - m_Freeze.m_ActivationTick) % Server()->TickSpeed() == 0) {
-		GameServer()->CreateDamageInd(m_Pos, 0, (m_Freeze.m_Duration - (Server()->Tick() - m_Freeze.m_ActivationTick) / Server()->TickSpeed()), m_pPlayer->GetTeam(), m_pPlayer->GetCID());
+		// SAH: floating countdown above the frozen tee ("N" seconds left, laser text like score floats)
+		int SecondsLeft = m_Freeze.m_Duration - (Server()->Tick() - m_Freeze.m_ActivationTick) / Server()->TickSpeed();
+		if(SecondsLeft > 0)
+			GameServer()->MakeLaserTextFreeze(m_Pos, m_pPlayer->GetCID(), SecondsLeft);
+		// SAH: sparkle "stars" around the frozen player once per second
+		GameServer()->CreatePlayerSpawn(m_Pos);
+		// SAH: sparkle pulse at the freezer, so he sees his victim is still frozen
+		CCharacter *pFreezer = GameServer()->GetPlayerChar(m_FreezeOwnerID);
+		if(pFreezer && pFreezer != this)
+			GameServer()->CreatePlayerSpawn(pFreezer->m_Pos);
 	}
 
 	if ((Server()->Tick() - m_Freeze.m_ActivationTick) > (m_Freeze.m_Duration * Server()->TickSpeed()))
@@ -321,6 +330,7 @@ void CCharacter::FireWeapon()
 
 		case WEAPON_GUN:
 		{
+			++m_pPlayer->m_Stats.m_Shots;
 			new CProjectile(GameWorld(), WEAPON_GUN,
 				m_pPlayer->GetCID(),
 				ProjStartPos,
@@ -517,14 +527,10 @@ void CCharacter::OnHookedPlayer(CCharacter *pFrom)
 		}
 	}
 
-	// hooking a teammate: rescue him instead of freezing
+	// hooking a teammate: SAH has no hook rescue - frozen teammates are
+	// unfrozen only by pistol shots; non frozen teammates are just pulled
 	if(GameServer()->m_pController->IsTeamplay() && pHookPlayer->GetTeam() == m_pPlayer->GetTeam())
-	{
-		if(IsFrozen() && m_Freeze.m_ActivationTick != Server()->Tick())
-			Unfreeze(pHookPlayer->GetCID());
-		// non frozen teammates are just pulled, like in vanilla
 		return;
-	}
 
 	// enemies are frozen by the hook (replaces the laser in SAH)
 	if(IsFrozen())
@@ -569,6 +575,19 @@ void CCharacter::OnDirectInput(CNetObj_PlayerInput *pNewInput)
 {
 	mem_copy(&m_LatestPrevInput, &m_LatestInput, sizeof(m_LatestInput));
 	mem_copy(&m_LatestInput, pNewInput, sizeof(m_LatestInput));
+
+	// /pause: ignore all movement and firing input, keep aim only
+	if(m_pPlayer->m_Paused)
+	{
+		m_Input.m_Direction = 0;
+		m_Input.m_Jump = 0;
+		m_Input.m_Hook = 0;
+		if((m_Input.m_Fire&1) != 0)
+			m_Input.m_Fire++;
+		m_Input.m_Fire &= INPUT_STATE_MASK;
+		m_LatestPrevInput = m_LatestInput = m_Input;
+		return;
+	}
 
 	// it is not allowed to aim in the center
 	if(m_LatestInput.m_TargetX == 0 && m_LatestInput.m_TargetY == 0)
@@ -980,16 +999,24 @@ bool CCharacter::TakeDamage(vec2 Force, int Dmg, int From, int Weapon)
 	if(GameServer()->m_pController->UsesSahScoring() && Weapon == WEAPON_GUN)
 	{
 		CPlayer *pPlayer = GameServer()->m_apPlayers[From];
-		// push like a hammer for enemies
+		// push like a hammer for enemies; for own shots push along the bullet direction
 		vec2 Dir;
-		if(pPlayer && pPlayer->GetCharacter())
+		if(pPlayer && pPlayer->GetCharacter() && From != m_pPlayer->GetCID())
 			Dir = normalize(m_Pos - pPlayer->GetCharacter()->m_Pos);
+		else if(length(Force) > 0.00001f)
+			Dir = normalize(Force);
 		else
 			Dir = vec2(0.f, -1.f);
 		m_Core.m_Vel += vec2(0.f, -1.f) + normalize(Dir + vec2(0.f, -1.1f)) * 10.0f;
 
-		// unfreeze a frozen teammate with pistol shots
-		if(IsFrozen() && pPlayer && GameServer()->m_pController->IsTeamplay() && pPlayer->GetTeam() == m_pPlayer->GetTeam())
+		// SAH: a pistol push that lands on an enemy counts as a hit for the shooter
+		// (accuracy = gun hits / gun shots; self-pushes and teammate pushes don't count)
+		if(pPlayer && From != m_pPlayer->GetCID()
+			&& !(GameServer()->m_pController->IsTeamplay() && pPlayer->GetTeam() == m_pPlayer->GetTeam()))
+			++pPlayer->m_Stats.m_GunHits;
+
+		// unfreeze a frozen teammate with pistol shots (own shots never unfreeze yourself)
+		if(IsFrozen() && pPlayer && From != m_pPlayer->GetCID() && GameServer()->m_pController->IsTeamplay() && pPlayer->GetTeam() == m_pPlayer->GetTeam())
 		{
 			int Shots = max(1, g_Config.m_SvSahShotsToUnfreeze);
 			int Step = max(1, m_Freeze.m_Duration / Shots);

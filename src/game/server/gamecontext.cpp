@@ -122,6 +122,16 @@ void CGameContext::MakeLaserTextPoints(vec2 pPos, int pOwner, int pPoints){
 	new CLaserText(&m_World, pPos, pOwner, Server()->TickSpeed() * 3, text, (int)(strlen(text)));
 }
 
+// SAH: floating freeze countdown above a frozen tee ("N" seconds left).
+// Rendered with laser text (only digits are in the ascii table, like score floats).
+void CGameContext::MakeLaserTextFreeze(vec2 pPos, int pOwner, int pSeconds){
+	char text[10];
+	str_format(text, 10, "%d", pSeconds);
+	pPos.y -= 20.0 * 2.5;
+	// lifetime is exactly one second: a new number spawns each second, no overlap
+	new CLaserText(&m_World, pPos, pOwner, Server()->TickSpeed(), text, (int)(strlen(text)));
+}
+
 void CGameContext::CreateDamageInd(vec2 Pos, float Angle, int Amount, int Team, int FromPlayerID)
 {
 	float a = 3 * 3.14159f / 2 + Angle;
@@ -1449,6 +1459,33 @@ void CGameContext::CmdEmote(CGameContext* pContext, int pClientID, const char** 
 	}
 }
 
+void CGameContext::CmdPause(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum){
+	CPlayer* p = pContext->m_apPlayers[pClientID];
+	if(!p) return;
+
+	p->m_Paused = !p->m_Paused;
+
+	// keep the tee standing still right away
+	CCharacter* pChr = p->GetCharacter();
+	if(pChr && p->m_Paused)
+	{
+		pChr->ResetInput();
+		pChr->m_Core.m_HookState = HOOK_IDLE;
+		pChr->m_Core.m_HookedPlayer = -1;
+	}
+
+	// silent: standard clients have this bound, don't spam the chat
+}
+
+void CGameContext::CmdSpec(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum){
+	CPlayer* p = pContext->m_apPlayers[pClientID];
+	if(!p) return;
+
+	if(p->GetTeam() != TEAM_SPECTATORS)
+		p->SetTeam(TEAM_SPECTATORS);
+	// silent: standard clients have this bound, don't spam the chat
+}
+
 void CGameContext::CmdSelfKillProtect(CGameContext* pContext, int pClientID, const char** pArgs, int ArgNum){
 	(void)pArgs; (void)ArgNum;
 	CPlayer* pPlayer = pContext->m_apPlayers[pClientID];
@@ -2016,6 +2053,10 @@ void CGameContext::OnInit(IKernel *pKernel, IMap* pMap, CConfiguration* pConfigF
 	{
 		AddServerCommand("sp", "toggle self-kill protection (protects your own frozen from being stolen)", 0, CmdSelfKillProtect);
 	}
+
+	// standard client binds (/pause, /spec) so they don't fall through as "No such command"
+	AddServerCommand("pause", "pause/unpause yourself", 0, CmdPause);
+	AddServerCommand("spec", "move yourself to the spectators", 0, CmdSpec);
 	
 	// create all entities from the game layer
 	CMapItemLayerTilemap *pTileMap = m_Layers.GameLayer();
@@ -2172,7 +2213,9 @@ void CGameContext::SendRoundStats() {
 			bestKDPlayerIDs.SetBitOfPosition(i);
 		}
 
-		float Accuracy = (float)p->m_Stats.m_Shots > 0.0f ? (float)p->m_Stats.m_Hits / (float)p->m_Stats.m_Shots : 0.0f;
+		// SAH: in SAH m_Hits counts deaths by opponents, so accuracy uses pistol hits on enemies
+		int AccuracyHits = m_pController->UsesSahScoring() ? p->m_Stats.m_GunHits : p->m_Stats.m_Hits;
+		float Accuracy = (float)p->m_Stats.m_Shots > 0.0f ? (float)AccuracyHits / (float)p->m_Stats.m_Shots : 0.0f;
 		Accuracy = min(1.0f, Accuracy); // accuracy cannot exceed 100%
 		if (bestAccuracy < Accuracy) {
 			bestAccuracy = Accuracy;

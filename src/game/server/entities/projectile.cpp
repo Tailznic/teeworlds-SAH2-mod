@@ -63,7 +63,9 @@ void CProjectile::Tick()
 	vec2 CurPos = GetPos(Ct);
 	int Collide = GameServer()->Collision()->IntersectLine(PrevPos, CurPos, &CurPos, 0);
 	CCharacter *OwnerChar = GameServer()->GetPlayerChar(m_Owner);
-	CCharacter *TargetChr = GameServer()->m_World.IntersectCharacter(PrevPos, CurPos, 6.0f, CurPos, OwnerChar);
+	// SAH: own pistol shots can hit the shooter (push off your own bullets)
+	bool SelfPush = (m_Weapon == WEAPON_GUN && GameServer()->m_pController->UsesSahScoring());
+	CCharacter *TargetChr = GameServer()->m_World.IntersectCharacter(PrevPos, CurPos, 6.0f, CurPos, SelfPush ? 0 : OwnerChar);
 
 	m_LifeSpan--;
 

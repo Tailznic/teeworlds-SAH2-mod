@@ -210,23 +210,22 @@ void CCharacterCore::Tick(bool UseInput)
 		{
 			if(Hit&CCollision::COLFLAG_NOHOOK)
 			{
-				if(g_Config.m_SvSahHookableHook && g_Config.m_SvSahHookBounces > 0)
+				if(g_Config.m_SvSahHookableHook && g_Config.m_SvSahHookBounces > 0 && m_HookBounces > 0)
 				{
-					vec2 Dir = normalize(NewPos - m_HookPos);
-					if(length(Dir) > 0.0001f)
+					// SAH: reflect the hook exactly like the laser does (CCollision::MovePoint)
+					vec2 TempPos = NewPos;
+					vec2 TempDir = m_HookDir * 4.0f;
+					m_pCollision->MovePoint(&TempPos, &TempDir, 1.0f, 0);
+					vec2 BounceDir = normalize(TempDir);
+					if(length(BounceDir) > 0.0001f)
 					{
-						vec2 Normal = normalize(vec2(Dir.y, -Dir.x));
-						vec2 ReflectDir = m_HookDir - Normal * (2.0f * dot(m_HookDir, Normal));
-						vec2 BounceDir = normalize(ReflectDir);
-						if(length(BounceDir) > 0.0001f)
-						{
-							m_HookDir = BounceDir;
-							m_HookPos = NewPos + BounceDir * 4.0f;
-							NewPos = m_HookPos + BounceDir * m_pWorld->m_Tuning.m_HookFireSpeed;
-							m_HookState = HOOK_FLYING;
-							m_TriggeredEvents |= COREEVENT_HOOK_HIT_NOHOOK;
-							return;
-						}
+						m_HookPos = TempPos;
+						m_HookDir = BounceDir;
+						NewPos = m_HookPos + BounceDir * m_pWorld->m_Tuning.m_HookFireSpeed;
+						m_HookState = HOOK_FLYING;
+						m_HookBounces--;
+						m_TriggeredEvents |= COREEVENT_HOOK_HIT_NOHOOK;
+						return;
 					}
 				}
 				GoingToRetract = true;

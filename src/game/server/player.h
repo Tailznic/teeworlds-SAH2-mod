@@ -75,6 +75,7 @@ public:
 		int m_UnfreezingHammerHits; //number of hammers to a frozen teammate
 		
 		int m_Shots; //the shots a player made
+		int m_GunHits; //SAH: pistol pushes that landed on an enemy (used for accuracy)
 
 		//SAH (Stole and Hook) stats
 		int m_SahScoreDelta; //direct score changes (steal kills, assists, penalties)
@@ -166,6 +167,7 @@ public:
 	bool m_ForceBalanced;
 	int m_LastActionTick;
 	int m_TeamChangeTick;
+	int m_Paused; // /pause: freeze own tee in place (DDNet-style pause)
 	struct
 	{
 		int m_TargetX;

@@ -172,8 +172,21 @@ void CEffects::PlayerDeath(vec2 Pos, int ClientID)
 		p.SetDefault();
 		p.m_Spr = SPRITE_PART_SPLAT01 + (rand()%3);
 		p.m_Pos = Pos;
-		p.m_Vel = RandomDir() * ((frandom()+0.1f)*900.0f);
-		p.m_LifeSpan = 0.3f + frandom()*0.3f;
+		// death animation: particles below the tee fall down,
+		// particles above scatter in all directions
+		vec2 Off = RandomDir() * 24.0f;
+		if(Off.y >= 0.0f) // lower half: stream down
+		{
+			p.m_Vel = vec2((frandom()-0.5f) * 500.0f, 300.0f + frandom()*600.0f);
+			p.m_LifeSpan = 0.5f + frandom()*0.3f;
+			Off.y = 4.0f + frandom()*20.0f;
+		}
+		else // upper half: scatter
+		{
+			p.m_Vel = RandomDir() * ((frandom()+0.1f)*900.0f);
+			p.m_LifeSpan = 0.3f + frandom()*0.3f;
+		}
+		p.m_Pos = Pos + Off;
 		p.m_StartSize = 24.0f + frandom()*16;
 		p.m_EndSize = 0;
 		p.m_Rot = frandom()*pi*2;
