@@ -212,13 +212,15 @@ void CCharacterCore::Tick(bool UseInput)
 			if(g_Config.m_SvSahHookableHook && g_Config.m_SvSahHookBounces > 0 && m_HookBounces > 0)
 			{
 				// reflect the hook exactly like the laser does (CCollision::MovePoint)
-				vec2 TempPos = NewPos;
+				// use m_HookPos (start), NOT NewPos (collision point inside the wall)
+				vec2 TempPos = m_HookPos;
 				vec2 TempDir = m_HookDir * 4.0f;
 				m_pCollision->MovePoint(&TempPos, &TempDir, 1.0f, 0);
 				vec2 BounceDir = normalize(TempDir);
 				if(length(BounceDir) > 0.0001f)
 				{
-					m_HookPos = TempPos;
+					// place hook slightly away from the wall to avoid re-collision
+					m_HookPos = TempPos + BounceDir * 2.0f;
 					m_HookDir = BounceDir;
 					NewPos = m_HookPos + BounceDir * m_pWorld->m_Tuning.m_HookFireSpeed;
 					m_HookState = HOOK_FLYING;
