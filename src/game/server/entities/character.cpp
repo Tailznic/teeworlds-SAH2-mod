@@ -338,6 +338,11 @@ void CCharacter::FireWeapon()
 				(int)(Server()->TickSpeed()*GameServer()->Tuning()->m_GunLifetime),
 				1, 0, 0, -1, WEAPON_GUN);
 
+			// SAH: recoil — the shooter is pushed opposite to the fire direction
+			// (like a hammer hit), the bullet itself flies free and can reach walls/enemies
+			if(GameServer()->m_pController->UsesSahScoring())
+				m_Core.m_Vel -= Direction * 6.0f;
+
 			GameServer()->CreateSound(m_Pos, SOUND_GUN_FIRE);
 		} break;
 
@@ -506,8 +511,8 @@ void CCharacter::OnHookedPlayer(CCharacter *pFrom)
 
 	CPlayer *pHookPlayer = pFrom->GetPlayer();
 
-	// SAH: personal self-kill protection - you cannot hook your OWN frozen victim
-	// (this prevents accidentally throwing your own frozen enemy into spikes for -n)
+	// SAH: personal self-kill protection - completely prevent hooking your OWN frozen victim
+	// The hook is refused entirely: detached AND retracted so it cannot re-attach next tick
 	if(IsFrozen() && m_FreezeOwnerID == pHookPlayer->GetCID())
 	{
 		if(g_Config.m_SvSahSelfKillProtect && pHookPlayer->m_Stats.m_SelfKillProtected)
@@ -519,8 +524,11 @@ void CCharacter::OnHookedPlayer(CCharacter *pFrom)
 					++OwnTeamPlayers;
 			if(OwnTeamPlayers > 1)
 			{
-				// refuse the hook: detach it and warn the player
+				// refuse the hook: detach AND retract it so it cannot re-attach
 				pFrom->m_Core.m_HookedPlayer = -1;
+				pFrom->m_Core.m_HookState = HOOK_RETRACT_START;
+				pFrom->m_Core.m_HookPos = pFrom->m_Core.m_Pos;
+				pFrom->m_Core.m_HookDir = vec2(0.f, 0.f);
 				GameServer()->SendChatTarget(pHookPlayer->GetCID(), "[SAH] Своего нельзя красть! (/sp — отключить защиту)");
 				return;
 			}
@@ -639,6 +647,43 @@ void CCharacter::PreTick()
 
 	//before the core update to know if we hooked somebody before it.
 	m_LastHookedPlayer = m_Core.m_HookedPlayer;
+
+	// SAH: hooking a protected frozen victim is forbidden entirely — retract
+	// the hook before the core tick would grab him, so he never gets pulled
+	if(GameServer()->m_pController->UsesSahScoring() && g_Config.m_SvSahSelfKillProtect &&
+		m_Core.m_HookState == HOOK_FLYING && m_Core.m_HookedPlayer == -1)
+	{
+		vec2 HookNewPos = m_Core.m_HookPos + m_Core.m_HookDir * m_pWorld->m_Tuning.m_HookFireSpeed;
+		for(int i = 0; i < MAX_CLIENTS; ++i)
+		{
+			CCharacterCore *pOtherCore = m_pWorld->m_apCharacters[i];
+			if(!pOtherCore || pOtherCore == &m_Core)
+				continue;
+
+			vec2 ClosestPoint = closest_point_on_line(m_Core.m_HookPos, HookNewPos, pOtherCore->m_Pos);
+			if(distance(pOtherCore->m_Pos, ClosestPoint) < 28.0f + 2.0f)
+			{
+				CCharacter *pTarget = GameServer()->GetPlayerChar(i);
+				if(pTarget && pTarget->IsFrozen() && pTarget->GetFreezeOwnerID() == m_pPlayer->GetCID() &&
+					pTarget->GetPlayer()->m_Stats.m_SelfKillProtected)
+				{
+					// protection is skipped in a duel-like team with a single player
+					int OwnTeamPlayers = 0;
+					for(int j = 0; j < MAX_CLIENTS; ++j)
+						if(GameServer()->m_apPlayers[j] && GameServer()->m_apPlayers[j]->GetTeam() == m_pPlayer->GetTeam())
+							++OwnTeamPlayers;
+					if(OwnTeamPlayers > 1)
+					{
+						m_Core.m_HookState = HOOK_RETRACT_START;
+						m_Core.m_HookedPlayer = -1;
+						m_Core.m_TriggeredEvents |= COREEVENT_HOOK_HIT_NOHOOK;
+						GameServer()->SendChatTarget(m_pPlayer->GetCID(), "[SAH] Своего зафризного нельзя цеплять хуком! (/sp — отключить защиту)");
+						break;
+					}
+				}
+			}
+		}
+	}
 
 	m_Core.m_Input = m_Input;
 	m_Core.Tick(true);

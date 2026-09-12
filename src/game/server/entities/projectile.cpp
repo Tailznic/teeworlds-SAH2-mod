@@ -19,6 +19,7 @@ CProjectile::CProjectile(CGameWorld *pGameWorld, int Type, int Owner, vec2 Pos, 
 	m_Weapon = Weapon;
 	m_StartTick = Server()->Tick();
 	m_Explosive = Explosive;
+	m_SelfPushed = false;
 
 	GameWorld()->InsertEntity(this);
 }
@@ -63,9 +64,19 @@ void CProjectile::Tick()
 	vec2 CurPos = GetPos(Ct);
 	int Collide = GameServer()->Collision()->IntersectLine(PrevPos, CurPos, &CurPos, 0);
 	CCharacter *OwnerChar = GameServer()->GetPlayerChar(m_Owner);
-	// SAH: own pistol shots can hit the shooter (push off your own bullets)
-	bool SelfPush = (m_Weapon == WEAPON_GUN && GameServer()->m_pController->UsesSahScoring());
-	CCharacter *TargetChr = GameServer()->m_World.IntersectCharacter(PrevPos, CurPos, 6.0f, CurPos, SelfPush ? 0 : OwnerChar);
+
+	// SAH: skip owner collision on the very first tick to avoid self-hit at spawn
+	// (the bullet spawns inside the owner's proximity radius)
+	CCharacter *TargetChr = 0;
+	if(Server()->Tick() == m_StartTick)
+	{
+		// first tick: only check walls, skip player collision entirely
+		TargetChr = 0;
+	}
+	else
+	{
+		TargetChr = GameServer()->m_World.IntersectCharacter(PrevPos, CurPos, 6.0f, CurPos, OwnerChar);
+	}
 
 	m_LifeSpan--;
 

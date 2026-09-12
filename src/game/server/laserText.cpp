@@ -486,9 +486,13 @@ void CLaserText::makeLaser(char pChar, int pCharOffset, int& charCount){
 
 void CLaserText::Snap(int SnappingClient)
 {
+	// SAH: only the owner (the frozen player) can see the countdown text
+	if(SnappingClient != m_Owner)
+		return;
+
 	if(NetworkClipped(SnappingClient))
 		return;
-	
+
 	for(int i = 0; i < m_CharNum; ++i){
 		CNetObj_Laser *pObj = static_cast<CNetObj_Laser *>(Server()->SnapNewItem(NETOBJTYPE_LASER, m_Chars[i]->getID(), sizeof(CNetObj_Laser)));
 		if(!pObj)
@@ -498,7 +502,7 @@ void CLaserText::Snap(int SnappingClient)
 		pObj->m_Y = m_Chars[i]->m_Pos.y;
 		pObj->m_FromX = m_Chars[i]->m_Frompos.x;
 		pObj->m_FromY = m_Chars[i]->m_Frompos.y;
-		pObj->m_StartTick = Server()->Tick();		
+		pObj->m_StartTick = Server()->Tick();
 	}
 }
 

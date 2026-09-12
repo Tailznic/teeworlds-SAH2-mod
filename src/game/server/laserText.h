@@ -19,13 +19,16 @@ class CLaserText : public CEntity
 public:
 	CLaserText(CGameWorld *pGameWorld, vec2 Pos, int Owner, int pAliveTicks, char* pText, int pTextLen);
 	CLaserText(CGameWorld *pGameWorld, vec2 Pos, int Owner, int pAliveTicks, char* pText, int pTextLen, float pCharPointOffset, float pCharOffsetFactor);
-	virtual ~CLaserText(){ 
-		delete[] m_Text; 
+	virtual ~CLaserText(){
+		delete[] m_Text;
 		for(int i = 0; i < m_CharNum; ++i) {
 			delete (CLaserChar*)m_Chars[i];
 		}
 		delete[] m_Chars;
 	}
+
+	// SAH: restrict rendering to m_Owner only (freeze countdown)
+	void SetOwnerOnly(bool OwnerOnly) { m_OwnerOnly = OwnerOnly; }
 
 	virtual void Reset();
 	virtual void Tick();
@@ -39,6 +42,7 @@ private:
 	void makeLaser(char pChar, int pCharOffset, int& charCount);
 
 	int m_Owner;
+	bool m_OwnerOnly;
 	
 	int m_AliveTicks;
 	int m_CurTicks;

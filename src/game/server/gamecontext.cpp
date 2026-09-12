@@ -1929,6 +1929,11 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 	AddServerCommand("cmdlist", "show the cmd list", 0, CmdHelp);
 	if(m_Config->m_SvEmoteWheel || m_Config->m_SvEmotionalTees) AddServerCommand("emote", "enable custom emotes", "<emote type> <time in seconds>", CmdEmote);
 
+	// SAH commands (registered unconditionally so /sp is always available)
+	AddServerCommand("sp", "toggle self-kill protection (protects your own frozen from being stolen)", 0, CmdSelfKillProtect);
+	AddServerCommand("pause", "pause/unpause yourself", 0, CmdPause);
+	AddServerCommand("spec", "move yourself to the spectators", 0, CmdSpec);
+
 	//if(!data) // only load once
 		//data = load_data_from_memory(internal_data);
 

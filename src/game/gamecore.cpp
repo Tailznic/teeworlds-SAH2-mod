@@ -208,30 +208,35 @@ void CCharacterCore::Tick(bool UseInput)
 		int Hit = m_pCollision->IntersectLine(m_HookPos, NewPos, &NewPos, 0);
 		if(Hit)
 		{
+			// SAH: hook bounces off ALL solid tiles (like a laser) when enabled
+			if(g_Config.m_SvSahHookableHook && g_Config.m_SvSahHookBounces > 0 && m_HookBounces > 0)
+			{
+				// reflect the hook exactly like the laser does (CCollision::MovePoint)
+				vec2 TempPos = NewPos;
+				vec2 TempDir = m_HookDir * 4.0f;
+				m_pCollision->MovePoint(&TempPos, &TempDir, 1.0f, 0);
+				vec2 BounceDir = normalize(TempDir);
+				if(length(BounceDir) > 0.0001f)
+				{
+					m_HookPos = TempPos;
+					m_HookDir = BounceDir;
+					NewPos = m_HookPos + BounceDir * m_pWorld->m_Tuning.m_HookFireSpeed;
+					m_HookState = HOOK_FLYING;
+					m_HookBounces--;
+					m_TriggeredEvents |= COREEVENT_HOOK_HIT_NOHOOK;
+					return;
+				}
+			}
+
 			if(Hit&CCollision::COLFLAG_NOHOOK)
 			{
-				if(g_Config.m_SvSahHookableHook && g_Config.m_SvSahHookBounces > 0 && m_HookBounces > 0)
-				{
-					// SAH: reflect the hook exactly like the laser does (CCollision::MovePoint)
-					vec2 TempPos = NewPos;
-					vec2 TempDir = m_HookDir * 4.0f;
-					m_pCollision->MovePoint(&TempPos, &TempDir, 1.0f, 0);
-					vec2 BounceDir = normalize(TempDir);
-					if(length(BounceDir) > 0.0001f)
-					{
-						m_HookPos = TempPos;
-						m_HookDir = BounceDir;
-						NewPos = m_HookPos + BounceDir * m_pWorld->m_Tuning.m_HookFireSpeed;
-						m_HookState = HOOK_FLYING;
-						m_HookBounces--;
-						m_TriggeredEvents |= COREEVENT_HOOK_HIT_NOHOOK;
-						return;
-					}
-				}
 				GoingToRetract = true;
 			}
 			else
+			{
+				// regular solid tile: hook attaches (vanilla behavior)
 				GoingToHitGround = true;
+			}
 		}
 
 		// Check against other players first
