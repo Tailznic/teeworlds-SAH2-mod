@@ -653,10 +653,10 @@ void CCharacter::PreTick()
 	if(GameServer()->m_pController->UsesSahScoring() && g_Config.m_SvSahSelfKillProtect &&
 		m_Core.m_HookState == HOOK_FLYING && m_Core.m_HookedPlayer == -1)
 	{
-		vec2 HookNewPos = m_Core.m_HookPos + m_Core.m_HookDir * m_pWorld->m_Tuning.m_HookFireSpeed;
+		vec2 HookNewPos = m_Core.m_HookPos + m_Core.m_HookDir * GameServer()->m_World.m_Core.m_Tuning.m_HookFireSpeed;
 		for(int i = 0; i < MAX_CLIENTS; ++i)
 		{
-			CCharacterCore *pOtherCore = m_pWorld->m_apCharacters[i];
+			CCharacterCore *pOtherCore = GameServer()->m_World.m_Core.m_apCharacters[i];
 			if(!pOtherCore || pOtherCore == &m_Core)
 				continue;
 
