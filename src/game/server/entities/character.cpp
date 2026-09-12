@@ -170,12 +170,9 @@ void CCharacter::HandleFreeze()
 		int SecondsLeft = m_Freeze.m_Duration - (Server()->Tick() - m_Freeze.m_ActivationTick) / Server()->TickSpeed();
 		if(SecondsLeft > 0)
 			GameServer()->MakeLaserTextFreeze(m_Pos, m_pPlayer->GetCID(), SecondsLeft);
-		// SAH: sparkle "stars" around the frozen player once per second
-		GameServer()->CreatePlayerSpawn(m_Pos);
-		// SAH: sparkle pulse at the freezer, so he sees his victim is still frozen
-		CCharacter *pFreezer = GameServer()->GetPlayerChar(m_FreezeOwnerID);
-		if(pFreezer && pFreezer != this)
-			GameServer()->CreatePlayerSpawn(pFreezer->m_Pos);
+		// SAH: sparkle effect at the frozen tee, visible ONLY to the freezer
+		if(m_FreezeOwnerID >= 0)
+			GameServer()->CreatePlayerSpawnForClient(m_Pos, m_FreezeOwnerID);
 	}
 
 	if ((Server()->Tick() - m_Freeze.m_ActivationTick) > (m_Freeze.m_Duration * Server()->TickSpeed()))
@@ -342,7 +339,7 @@ void CCharacter::FireWeapon()
 			// SAH: recoil — the shooter is pushed opposite to the fire direction
 			// (like a hammer hit), the bullet itself flies free and can reach walls/enemies
 			if(GameServer()->m_pController->UsesSahScoring())
-				m_Core.m_Vel -= Direction * 6.0f;
+				m_Core.m_Vel -= Direction * 2.0f;
 
 			GameServer()->CreateSound(m_Pos, SOUND_GUN_FIRE);
 		} break;

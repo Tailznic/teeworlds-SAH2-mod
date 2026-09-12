@@ -262,6 +262,17 @@ void CGameContext::CreatePlayerSpawn(vec2 Pos)
 	}
 }
 
+// SAH: spawn effect visible only to a specific client (the freezer)
+void CGameContext::CreatePlayerSpawnForClient(vec2 Pos, int ClientID)
+{
+	CNetEvent_Spawn *ev = (CNetEvent_Spawn *)m_Events.Create(NETEVENTTYPE_SPAWN, sizeof(CNetEvent_Spawn), CmaskOne(ClientID));
+	if(ev)
+	{
+		ev->m_X = (int)Pos.x;
+		ev->m_Y = (int)Pos.y;
+	}
+}
+
 void CGameContext::CreateDeath(vec2 Pos, int ClientID)
 {
 	// create the event

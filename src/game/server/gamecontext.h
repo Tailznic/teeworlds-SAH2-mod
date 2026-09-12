@@ -259,6 +259,7 @@ public:
 	void CreateExplosion(vec2 Pos, int Owner, int Weapon, bool NoDamage);
 	void CreateHammerHit(vec2 Pos);
 	void CreatePlayerSpawn(vec2 Pos);
+	void CreatePlayerSpawnForClient(vec2 Pos, int ClientID);
 	void CreateDeath(vec2 Pos, int Who);
 	void CreateSound(vec2 Pos, int Sound, QuadroMask Mask=QuadroMask(-1ll));
 	void CreateSoundGlobal(int Sound, int Target=-1);
