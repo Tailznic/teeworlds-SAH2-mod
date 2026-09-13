@@ -743,13 +743,13 @@ void CCharacter::Tick()
 	}
 
 	// SAH: hook re-fire cooldown — applied only when a hook shot latched nothing
-	if(m_Core.m_HookState == HOOK_GRIPPED)
+	if(m_Core.m_HookState == HOOK_GRABBED)
 		m_HookLatched = true;
 	if(m_Core.m_HookState == HOOK_FLYING && m_HookPrevState != HOOK_FLYING)
 		m_HookLatched = false; // a fresh hook shot started
-	if(m_HookPrevState == HOOK_FLYING && m_Core.m_HookState != HOOK_FLYING && m_Core.m_HookState != HOOK_GRIPPED && !m_HookLatched
+	if(m_HookPrevState == HOOK_FLYING && m_Core.m_HookState != HOOK_FLYING && m_Core.m_HookState != HOOK_GRABBED && !m_HookLatched
 		&& GameServer()->m_pController->UsesSahScoring())
-		m_Core.m_HookFireDelay = g_pData->m_Weapons.m_aId[WEAPON_LASER].m_Firedelay * Server()->TickSpeed() / 1000; // same cd as the fng freeze laser
+		m_Core.m_HookFireDelay = g_pData->m_Weapons.m_aId[WEAPON_RIFLE].m_Firedelay * Server()->TickSpeed() / 1000; // same cd as the fng freeze laser (rifle)
 	m_HookPrevState = m_Core.m_HookState;
 
 	// Previnput
