@@ -181,9 +181,7 @@ void CCharacter::HandleFreeze()
 		// SAH: tick sound for the frozen player (like a clock)
 		if(SecondsLeft > 0)
 			GameServer()->CreateSound(m_Pos, SOUND_PICKUP_HEALTH, CmaskOne(m_pPlayer->GetCID()));
-		// SAH: tick sound for the freezer too
-		if(SecondsLeft > 0 && m_FreezeOwnerID >= 0)
-			GameServer()->CreateSound(m_Pos, SOUND_PICKUP_HEALTH, CmaskOne(m_FreezeOwnerID));
+
 	}
 
 	if ((Server()->Tick() - m_Freeze.m_ActivationTick) > (m_Freeze.m_Duration * Server()->TickSpeed()))
