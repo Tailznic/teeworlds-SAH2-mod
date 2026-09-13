@@ -475,9 +475,6 @@ void CCharacterCore::Write(CNetObj_CharacterCore *pObjCore)
 	pObjCore->m_HookY = round_to_int(m_HookPos.y);
 	pObjCore->m_HookDx = round_to_int(m_HookDir.x*256.0f);
 	pObjCore->m_HookDy = round_to_int(m_HookDir.y*256.0f);
-	pObjCore->m_HookFireDelay = m_HookFireDelay;
-	pObjCore->m_HookedPlayer = m_HookedPlayer;
-	pObjCore->m_HookDy = round_to_int(m_HookDir.y*256.0f);
 	pObjCore->m_HookedPlayer = m_HookedPlayer;
 	pObjCore->m_Jumped = m_Jumped;
 	pObjCore->m_Direction = m_Direction;
@@ -492,9 +489,6 @@ void CCharacterCore::Read(const CNetObj_CharacterCore *pObjCore)
 	m_Vel.y = pObjCore->m_VelY/256.0f;
 	m_HookState = pObjCore->m_HookState;
 	m_HookTick = pObjCore->m_HookTick;
-	m_HookDir.y = pObjCore->m_HookDy/256.0f;
-	m_HookFireDelay = pObjCore->m_HookFireDelay;
-	m_HookedPlayer = pObjCore->m_HookedPlayer;
 	m_HookPos.x = pObjCore->m_HookX;
 	m_HookPos.y = pObjCore->m_HookY;
 	m_HookDir.x = pObjCore->m_HookDx/256.0f;

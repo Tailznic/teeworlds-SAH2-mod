@@ -120,10 +120,17 @@ void CPlayers::RenderHook(
 
 	vec2 Position = mix(vec2(Prev.m_X, Prev.m_Y), vec2(Player.m_X, Player.m_Y), IntraTick);
 
-	// SAH: don't render the hook if the server snapshot shows it's idle
-	// (prevents "phantom hooks" during the ~800ms cooldown after a missed hook)
-	if(pInfo.m_Local && g_Config.m_ClPredict && Player.m_HookState <= 0)
-		return;
+	// SAH: don't render the hook during re-fire cooldown.
+	// Use the server snapshot's hook state (not the predicted one) to avoid
+	// "phantom hooks" that appear when the client predicts a hook fire that the
+	// server rejected due to the cooldown after a missed hook.
+	if(pInfo.m_Local)
+	{
+		CCharacterCore SnapChar;
+		SnapChar.Read(&Player);
+		if(SnapChar.m_HookState <= 0)
+			Player.m_HookState = 0;
+	}
 
 	// draw hook
 	if (Prev.m_HookState>0 && Player.m_HookState>0)
