@@ -50,6 +50,8 @@ CCharacter::CCharacter(CGameWorld *pWorld)
 	m_Armor = 0;
 	m_Freeze.m_ActivationTick = 0;
 	m_FreezeOwnerID = -1;
+	m_HookLatched = false;
+	m_HookPrevState = HOOK_IDLE;
 
 	m_InvincibleTick = 0;
 	m_Killer.m_KillerID = -1;
@@ -65,6 +67,9 @@ bool CCharacter::Spawn(CPlayer *pPlayer, vec2 Pos)
 {
 	m_Freeze.m_ActivationTick = 0;
 	m_FreezeOwnerID = -1;
+	m_HookLatched = false;
+	m_HookPrevState = HOOK_IDLE;
+	m_Core.m_HookFireDelay = 0;
 
 	m_Killer.m_KillerID = -1;
 	m_Killer.m_uiKillerHookTicks = 0;
@@ -170,9 +175,15 @@ void CCharacter::HandleFreeze()
 		int SecondsLeft = m_Freeze.m_Duration - (Server()->Tick() - m_Freeze.m_ActivationTick) / Server()->TickSpeed();
 		if(SecondsLeft > 0)
 			GameServer()->MakeLaserTextFreeze(m_Pos, m_pPlayer->GetCID(), SecondsLeft);
-		// SAH: sparkle effect at the frozen tee, visible ONLY to the freezer
+		// SAH: diagonal ninja-particle lines around the frozen tee, visible ONLY to the freezer
 		if(m_FreezeOwnerID >= 0)
-			GameServer()->CreatePlayerSpawnForClient(m_Pos, m_FreezeOwnerID);
+			GameServer()->CreateSahFreezeMarker(m_Pos, m_FreezeOwnerID);
+		// SAH: tick sound for the frozen player (like a clock)
+		if(SecondsLeft > 0)
+			GameServer()->CreateSound(m_Pos, SOUND_PICKUP_HEALTH, CmaskOne(m_pPlayer->GetCID()));
+		// SAH: tick sound for the freezer too
+		if(SecondsLeft > 0 && m_FreezeOwnerID >= 0)
+			GameServer()->CreateSound(m_Pos, SOUND_PICKUP_HEALTH, CmaskOne(m_FreezeOwnerID));
 	}
 
 	if ((Server()->Tick() - m_Freeze.m_ActivationTick) > (m_Freeze.m_Duration * Server()->TickSpeed()))
@@ -731,6 +742,16 @@ void CCharacter::Tick()
 		}
 	}
 
+	// SAH: hook re-fire cooldown — applied only when a hook shot latched nothing
+	if(m_Core.m_HookState == HOOK_GRIPPED)
+		m_HookLatched = true;
+	if(m_Core.m_HookState == HOOK_FLYING && m_HookPrevState != HOOK_FLYING)
+		m_HookLatched = false; // a fresh hook shot started
+	if(m_HookPrevState == HOOK_FLYING && m_Core.m_HookState != HOOK_FLYING && m_Core.m_HookState != HOOK_GRIPPED && !m_HookLatched
+		&& GameServer()->m_pController->UsesSahScoring())
+		m_Core.m_HookFireDelay = g_pData->m_Weapons.m_aId[WEAPON_LASER].m_Firedelay * Server()->TickSpeed() / 1000; // same cd as the fng freeze laser
+	m_HookPrevState = m_Core.m_HookState;
+
 	// Previnput
 	m_PrevInput = m_Input;
 
@@ -998,10 +1019,8 @@ void CCharacter::DieSpikes(int pPlayerID, int spikes_flag) {
 		if(GameServer()->m_pController->UsesSahScoring())
 		{
 			// SAH: a sad crying sound instead of the normal death sound
+			// (the snowfall particles are rendered client-side by CEffects::PlayerDeath in SAH mode)
 			GameServer()->CreateSound(m_Pos, SOUND_TEE_CRY);
-			// blood effect: a few red bursts splashing out of the dying tee
-			for(int i = 0; i < 6; ++i)
-				GameServer()->CreateExplosion(m_Pos + vec2(frandom()*28.0f - 14.0f, frandom()*28.0f - 14.0f), m_pPlayer->GetCID(), WEAPON_HAMMER, true);
 		}
 		else
 			GameServer()->CreateSound(m_Pos, SOUND_PLAYER_DIE);

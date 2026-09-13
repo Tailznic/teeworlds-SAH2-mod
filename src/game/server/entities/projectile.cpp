@@ -65,15 +65,10 @@ void CProjectile::Tick()
 	int Collide = GameServer()->Collision()->IntersectLine(PrevPos, CurPos, &CurPos, 0);
 	CCharacter *OwnerChar = GameServer()->GetPlayerChar(m_Owner);
 
-	// SAH: skip owner collision on the very first tick to avoid self-hit at spawn
-	// (the bullet spawns inside the owner's proximity radius)
+	// SAH: skip player collision on first tick to avoid self-hit at spawn
+	// (bullet spawns ~21 units from owner center, within owner's 28-unit radius)
 	CCharacter *TargetChr = 0;
-	if(Server()->Tick() == m_StartTick)
-	{
-		// first tick: only check walls, skip player collision entirely
-		TargetChr = 0;
-	}
-	else
+	if(Server()->Tick() != m_StartTick)
 	{
 		TargetChr = GameServer()->m_World.IntersectCharacter(PrevPos, CurPos, 6.0f, CurPos, OwnerChar);
 	}

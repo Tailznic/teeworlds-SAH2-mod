@@ -72,6 +72,7 @@ void CCharacterCore::Reset()
 	m_HookState = HOOK_IDLE;
 	m_HookedPlayer = -1;
 	m_HookBounces = 0;
+	m_HookFireDelay = 0;
 	m_Jumped = 0;
 	m_TriggeredEvents = 0;
 	
@@ -82,6 +83,10 @@ void CCharacterCore::Tick(bool UseInput)
 {
 	float PhysSize = 28.0f;
 	m_TriggeredEvents = 0;
+
+	// SAH: hook re-fire cooldown tick (set by the game code after a hook that latched nothing)
+	if(m_HookFireDelay > 0)
+		--m_HookFireDelay;
 
 	// get ground state
 	bool Grounded = false;
@@ -142,7 +147,7 @@ void CCharacterCore::Tick(bool UseInput)
 		// handle hook
 		if(m_Input.m_Hook)
 		{
-			if(m_HookState == HOOK_IDLE)
+			if(m_HookState == HOOK_IDLE && m_HookFireDelay <= 0)
 			{
 				m_HookState = HOOK_FLYING;
 				m_HookPos = m_Pos+TargetDirection*PhysSize*1.5f;
@@ -153,6 +158,8 @@ void CCharacterCore::Tick(bool UseInput)
 				m_TriggeredEvents |= COREEVENT_HOOK_LAUNCH;
 				++m_CoreStats.m_NumHooks;
 			}
+			// SAH: while m_HookFireDelay > 0 the hook simply does not fire (re-fire cooldown
+			// after a hook that latched nothing — same value as the fng laser fire delay)
 		}
 		else
 		{

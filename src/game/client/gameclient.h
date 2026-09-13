@@ -102,6 +102,9 @@ public:
 	};
 	int m_ServerMode;
 
+	// SAH: true while connected to an SAH gametype server (client-side effects)
+	bool m_SahMode;
+
 	int m_DemoSpecID;
 
 	vec2 m_LocalCharacterPos;

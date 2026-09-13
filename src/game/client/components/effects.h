@@ -22,6 +22,8 @@ public:
 	void DamageIndicator(vec2 Pos, vec2 Dir);
 	void PlayerSpawn(vec2 Pos);
 	void PlayerDeath(vec2 Pos, int ClientID);
+	void SahDeathSnow(vec2 Pos, int ClientID);
+	void SahFreezeLines(vec2 Pos);
 	void PowerupShine(vec2 Pos, vec2 Size);
 
 	void Update();

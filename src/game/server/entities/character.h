@@ -152,6 +152,10 @@ private:
 	// SAH (Stole and Hook): the player that frozen this character (-1 = nobody)
 	int m_FreezeOwnerID;
 
+	// SAH: hook re-fire cooldown bookkeeping
+	bool m_HookLatched;    // the current hook shot caught at least one player
+	int m_HookPrevState;   // hook state on the previous tick (to detect FLYING -> retract transitions)
+
 	// killer, that frozen this character
 	struct {
 		int m_KillerID;

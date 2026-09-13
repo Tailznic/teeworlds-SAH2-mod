@@ -337,6 +337,7 @@ void CGameClient::OnConnected()
 void CGameClient::OnReset()
 {
 	// clear out the invalid pointers
+	m_SahMode = false;
 	m_LastNewPredictedTick = -1;
 	mem_zero(&g_GameClient.m_Snap, sizeof(g_GameClient.m_Snap));
 
@@ -609,6 +610,9 @@ void CGameClient::ProcessEvents()
 		{
 			CNetEvent_SoundWorld *ev = (CNetEvent_SoundWorld *)pData;
 			g_GameClient.m_pSounds->PlayAt(CSounds::CHN_WORLD, ev->m_SoundID, 1.0f, vec2(ev->m_X, ev->m_Y));
+			// SAH: silent freeze marker -> diagonal ninja-particle lines (masked to the freezer server-side)
+			if(g_GameClient.m_SahMode && ev->m_SoundID == 999)
+				g_GameClient.m_pEffects->SahFreezeLines(vec2(ev->m_X, ev->m_Y));
 		}
 	}
 }
@@ -874,6 +878,9 @@ void CGameClient::OnNewSnapshot()
 		else
 			m_ServerMode = SERVERMODE_PUREMOD;
 	}
+
+	// SAH: detect the SAH gametype for client-side effects
+	m_SahMode = str_find(CurrentServerInfo.m_aGameType, "SAH") != 0;
 
 	// add tuning to demo
 	if(DemoRecorder()->IsRecording() && mem_comp(&StandardTuning, &m_Tuning, sizeof(CTuningParams)) != 0)

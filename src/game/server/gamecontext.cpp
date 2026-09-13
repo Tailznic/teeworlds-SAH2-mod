@@ -128,6 +128,7 @@ void CGameContext::MakeLaserTextFreeze(vec2 pPos, int pOwner, int pSeconds){
 	char text[10];
 	str_format(text, 10, "%d", pSeconds);
 	pPos.y -= 20.0 * 2.5;
+	pPos.x += 32.0f; // SAH: offset countdown to the right of the frozen tee
 	// lifetime is exactly one second: a new number spawns each second, no overlap
 	new CLaserText(&m_World, pPos, pOwner, Server()->TickSpeed(), text, (int)(strlen(text)));
 }
@@ -270,6 +271,20 @@ void CGameContext::CreatePlayerSpawnForClient(vec2 Pos, int ClientID)
 	{
 		ev->m_X = (int)Pos.x;
 		ev->m_Y = (int)Pos.y;
+	}
+}
+
+// SAH: silent marker event for the custom client — renders diagonal ninja-particle lines
+// at the frozen tee for the freezer only. Sound id 999 is out of range: every client
+// (vanilla too) skips it in CSounds::GetSampleId, so nothing is played.
+void CGameContext::CreateSahFreezeMarker(vec2 Pos, int ClientID)
+{
+	CNetEvent_SoundWorld *ev = (CNetEvent_SoundWorld *)m_Events.Create(NETEVENTTYPE_SOUNDWORLD, sizeof(CNetEvent_SoundWorld), CmaskOne(ClientID));
+	if(ev)
+	{
+		ev->m_X = (int)Pos.x;
+		ev->m_Y = (int)Pos.y;
+		ev->m_SoundID = 999;
 	}
 }
 

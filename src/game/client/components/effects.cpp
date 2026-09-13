@@ -152,6 +152,12 @@ void CEffects::PlayerSpawn(vec2 Pos)
 
 void CEffects::PlayerDeath(vec2 Pos, int ClientID)
 {
+	// SAH: snowfall instead of blood
+	if(m_pClient->m_SahMode)
+	{
+		SahDeathSnow(Pos, ClientID);
+		return;
+	}
 	vec3 BloodColor(1.0f,1.0f,1.0f);
 
 	if(ClientID >= 0)
@@ -196,6 +202,59 @@ void CEffects::PlayerDeath(vec2 Pos, int ClientID)
 		vec3 c = BloodColor * (0.75f + frandom()*0.25f);
 		p.m_Color = vec4(c.r, c.g, c.b, 0.75f);
 		m_pClient->m_pParticles->Add(CParticles::GROUP_GENERAL, &p);
+	}
+}
+
+// SAH: snowfall on spike death — soft white flakes drifting down from above the death spot
+void CEffects::SahDeathSnow(vec2 Pos, int ClientID)
+{
+	for(int i = 0; i < 48; i++)
+	{
+		CParticle p;
+		p.SetDefault();
+		p.m_Spr = SPRITE_PART_BALL;
+		p.m_Pos = Pos + vec2((frandom()-0.5f) * 160.0f, -40.0f + (frandom()-0.5f) * 80.0f);
+		p.m_Vel = vec2((frandom()-0.5f) * 120.0f, 150.0f + frandom() * 350.0f);
+		p.m_LifeSpan = 0.8f + frandom() * 0.6f;
+		p.m_StartSize = 10.0f + frandom() * 14.0f;
+		p.m_EndSize = 0;
+		p.m_Rot = frandom() * pi * 2;
+		p.m_Rotspeed = (frandom() - 0.5f) * pi;
+		p.m_Gravity = 250.0f;
+		p.m_Friction = 0.95f;
+		float Brightness = 0.85f + frandom() * 0.15f;
+		p.m_Color = vec4(Brightness, Brightness, Brightness + 0.08f, 0.8f);
+		m_pClient->m_pParticles->Add(CParticles::GROUP_GENERAL, &p);
+	}
+}
+
+// SAH: freeze countdown for the freezer — 5-8 random diagonal lines from the tee
+// center along which ninja-slice particles travel strictly outwards
+void CEffects::SahFreezeLines(vec2 Pos)
+{
+	int NumLines = 5 + (rand() % 4);
+	for(int l = 0; l < NumLines; l++)
+	{
+		// a true diagonal: both components with equal magnitude, random sign
+		vec2 Dir = normalize(vec2((rand() % 2) ? 1.0f : -1.0f, (rand() % 2) ? 1.0f : -1.0f));
+		int NumParticles = 3 + (rand() % 3);
+		for(int i = 0; i < NumParticles; i++)
+		{
+			CParticle p;
+			p.SetDefault();
+			p.m_Spr = SPRITE_PART_SLICE;
+			p.m_Pos = Pos + Dir * (8.0f + frandom() * 24.0f);
+			p.m_Vel = Dir * (500.0f + frandom() * 500.0f);
+			p.m_LifeSpan = 0.25f + frandom() * 0.35f;
+			p.m_StartSize = 18.0f + frandom() * 22.0f;
+			p.m_EndSize = 0;
+			p.m_Rot = frandom() * pi * 2;
+			p.m_Rotspeed = (frandom() - 0.5f) * pi;
+			p.m_Gravity = 0.0f;   // move strictly along the line
+			p.m_Friction = 1.0f;  // no slowdown => straight line
+			p.m_Color = vec4(1.0f, 1.0f, 1.0f, 0.85f);
+			m_pClient->m_pParticles->Add(CParticles::GROUP_GENERAL, &p);
+		}
 	}
 }
 
