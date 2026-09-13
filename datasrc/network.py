@@ -142,6 +142,11 @@ Objects = [
 		NetIntAny("m_HookX"),
 		NetIntAny("m_HookY"),
 		NetIntAny("m_HookDx"),
+		NetIntAny("m_HookDx"),
+		NetIntAny("m_HookDy"),
+
+		NetIntRange("m_HookFireDelay", 0, 'max_int'),
+	]),
 		NetIntAny("m_HookDy"),
 	]),
 
