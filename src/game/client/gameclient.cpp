@@ -911,23 +911,6 @@ void CGameClient::OnPredict()
 		if(m_Snap.m_pLocalPrevCharacter)
 			m_PredictedPrevChar.Read(m_Snap.m_pLocalPrevCharacter);
 		return;
-	}
-
-	// SAH: sync hook fire-delay from server snapshot before predicting
-	// (prevents phantom hooks during the ~800ms cooldown after a missed hook)
-	if(m_Snap.m_pLocalCharacter && g_Config.m_ClPredict)
-	{
-		m_PredictedChar.m_HookFireDelay = m_Snap.m_pLocalCharacter->m_HookFireDelay;
-		m_PredictedPrevChar.m_HookFireDelay = m_Snap.m_pLocalPrevCharacter ? m_Snap.m_pLocalPrevCharacter->m_HookFireDelay : 0;
-		// if cooldown is active and hook is not latched to anything, force it idle
-		if(m_PredictedChar.m_HookFireDelay > 0 && m_PredictedChar.m_HookState != HOOK_GRABBED)
-		{
-			m_PredictedChar.m_HookState = HOOK_IDLE;
-			m_PredictedChar.m_HookedPlayer = -1;
-		}
-		if(m_PredictedPrevChar.m_HookFireDelay > 0 && m_PredictedPrevChar.m_HookState != HOOK_GRABBED)
-		{
-			m_PredictedPrevChar.m_HookState = HOOK_IDLE;
 			m_PredictedPrevChar.m_HookedPlayer = -1;
 		}
 	}
