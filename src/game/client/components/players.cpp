@@ -120,9 +120,9 @@ void CPlayers::RenderHook(
 
 	vec2 Position = mix(vec2(Prev.m_X, Prev.m_Y), vec2(Player.m_X, Player.m_Y), IntraTick);
 
-	// SAH: don't render the hook if the server has an active fire-delay cooldown
+	// SAH: don't render the hook if the server snapshot shows it's idle
 	// (prevents "phantom hooks" during the ~800ms cooldown after a missed hook)
-	if(pInfo.m_Local && g_Config.m_ClPredict && m_pClient->m_PredictedChar.m_HookFireDelay > 0)
+	if(pInfo.m_Local && g_Config.m_ClPredict && Player.m_HookState <= 0)
 		return;
 
 	// draw hook
