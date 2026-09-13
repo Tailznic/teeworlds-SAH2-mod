@@ -609,10 +609,12 @@ void CGameClient::ProcessEvents()
 		else if(Item.m_Type == NETEVENTTYPE_SOUNDWORLD)
 		{
 			CNetEvent_SoundWorld *ev = (CNetEvent_SoundWorld *)pData;
-			g_GameClient.m_pSounds->PlayAt(CSounds::CHN_WORLD, ev->m_SoundID, 1.0f, vec2(ev->m_X, ev->m_Y));
-			// SAH: silent freeze marker -> diagonal ninja-particle lines (masked to the freezer server-side)
+			// SAH: id 999 is the silent freeze marker -> only diagonal ninja-particle lines,
+			// never play a sample for it (masked to the freezer server-side)
 			if(g_GameClient.m_SahMode && ev->m_SoundID == 999)
 				g_GameClient.m_pEffects->SahFreezeLines(vec2(ev->m_X, ev->m_Y));
+			else
+				g_GameClient.m_pSounds->PlayAt(CSounds::CHN_WORLD, ev->m_SoundID, 1.0f, vec2(ev->m_X, ev->m_Y));
 		}
 	}
 }

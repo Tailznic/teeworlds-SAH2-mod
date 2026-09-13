@@ -176,12 +176,15 @@ void CCharacter::HandleFreeze()
 		if(SecondsLeft > 0)
 			GameServer()->MakeLaserTextFreeze(m_Pos, m_pPlayer->GetCID(), SecondsLeft);
 		// SAH: diagonal ninja-particle lines around the frozen tee, visible ONLY to the freezer
+		// (masked server-side; our client renders it without playing a sample)
 		if(m_FreezeOwnerID >= 0)
 			GameServer()->CreateSahFreezeMarker(m_Pos, m_FreezeOwnerID);
-		// SAH: tick sound for the frozen player (like a clock)
+		// SAH: tick sound (like a clock) for the frozen player
 		if(SecondsLeft > 0)
 			GameServer()->CreateSound(m_Pos, SOUND_PICKUP_HEALTH, CmaskOne(m_pPlayer->GetCID()));
-
+		// SAH: the freezer hears the same tick sound as the frozen player
+		if(m_FreezeOwnerID >= 0 && SecondsLeft > 0)
+			GameServer()->CreateSound(m_Pos, SOUND_PICKUP_HEALTH, CmaskOne(m_FreezeOwnerID));
 	}
 
 	if ((Server()->Tick() - m_Freeze.m_ActivationTick) > (m_Freeze.m_Duration * Server()->TickSpeed()))
