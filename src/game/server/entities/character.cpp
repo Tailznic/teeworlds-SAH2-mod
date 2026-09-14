@@ -1225,6 +1225,19 @@ void CCharacter::Snap(int SnappingClient)
 		m_SendCore.Write(pCharacter);
 	}
 
+	// SAH: vanilla-client anti-phantom. While the re-hook cooldown is active the
+	// server keeps the hook in HOOK_IDLE, so client-side prediction fires a phantom
+	// hook on every input tick. Sending HOOK_RETRACTED (-1, valid in the 0.6
+	// protocol m_HookState range -1..5) instead keeps the client's predicted core
+	// out of HOOK_IDLE, so it never predicts a hook shot, and HookState <= 0 hides
+	// the rendered hook. When the cooldown expires and a real shot is fired, the
+	// snapshot switches to HOOK_FLYING and prediction resumes in sync.
+	// Only sent to the owner: other clients don't predict this tee's hook.
+	if(GameServer()->m_pController->UsesSahScoring()
+		&& m_Core.m_HookState == HOOK_IDLE && m_Core.m_HookFireDelay > 0
+		&& SnappingClient == ClientID)
+		pCharacter->m_HookState = HOOK_RETRACTED;
+
 	// set emote
 	if (m_EmoteStop < Server()->Tick())
 	{
