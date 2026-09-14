@@ -179,11 +179,10 @@ void CCharacter::HandleFreeze()
 		// (masked server-side; our client renders it without playing a sample)
 		if(m_FreezeOwnerID >= 0)
 			GameServer()->CreateSahFreezeMarker(m_Pos, m_FreezeOwnerID);
-		// SAH: star-spawn marker around the frozen tee, visible ONLY to the freezer —
-		// rendered by ANY client (incl. vanilla DDNet/Rushie) via standard NETEVENTTYPE_SPAWN
-		// (opt-in: plays the spawn sound)
+		// SAH: white snow-puff marker around the frozen tee, visible ONLY to the freezer —
+		// rendered by ANY client (incl. vanilla DDNet/Rushie) via silent NETEVENTTYPE_EXPLOSION
 		if(m_FreezeOwnerID >= 0 && g_Config.m_SvSahFreezeMarkerSpawn)
-			GameServer()->CreatePlayerSpawnForClient(m_Pos, m_FreezeOwnerID);
+			GameServer()->CreateExplosion(m_Pos, m_pPlayer->GetCID(), WEAPON_WORLD, true, CmaskOne(m_FreezeOwnerID));
 		// SAH: tick sound (like a clock) for the frozen player
 		if(SecondsLeft > 0)
 			GameServer()->CreateSound(m_Pos, SOUND_PICKUP_HEALTH, CmaskOne(m_pPlayer->GetCID()));
@@ -1040,9 +1039,15 @@ void CCharacter::DieSpikes(int pPlayerID, int spikes_flag) {
 		Destroy();
 		if(GameServer()->m_pController->UsesSahScoring() && g_Config.m_SvSahDeathStars)
 		{
-			// SAH: star-burst death effect instead of blood — rendered by ANY client
-			// (standard NETEVENTTYPE_SPAWN; replaces the blood of NETEVENTTYPE_DEATH)
-			GameServer()->CreatePlayerSpawn(m_Pos);
+			// SAH: snow-puff death effect instead of blood — silent white explosion puffs
+			// scattered around the death spot; rendered by ANY client (incl. vanilla DDNet/Rushie).
+			// NETEVENTTYPE_EXPLOSION is visual-only here (NoDamage) and plays no sample.
+			GameServer()->CreateExplosion(m_Pos, m_pPlayer->GetCID(), WEAPON_WORLD, true);
+			for(int i = 0; i < 3; i++)
+			{
+				vec2 Offset = vec2((float)(rand() % 129) - 64.0f, (float)(rand() % 129) - 64.0f);
+				GameServer()->CreateExplosion(m_Pos + Offset, m_pPlayer->GetCID(), WEAPON_WORLD, true);
+			}
 		}
 		else
 			GameServer()->CreateDeath(m_Pos, m_pPlayer->GetCID());
