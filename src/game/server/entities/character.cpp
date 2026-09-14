@@ -179,6 +179,11 @@ void CCharacter::HandleFreeze()
 		// (masked server-side; our client renders it without playing a sample)
 		if(m_FreezeOwnerID >= 0)
 			GameServer()->CreateSahFreezeMarker(m_Pos, m_FreezeOwnerID);
+		// SAH: star-spawn marker around the frozen tee, visible ONLY to the freezer —
+		// rendered by ANY client (incl. vanilla DDNet/Rushie) via standard NETEVENTTYPE_SPAWN
+		// (opt-in: plays the spawn sound)
+		if(m_FreezeOwnerID >= 0 && g_Config.m_SvSahFreezeMarkerSpawn)
+			GameServer()->CreatePlayerSpawnForClient(m_Pos, m_FreezeOwnerID);
 		// SAH: tick sound (like a clock) for the frozen player
 		if(SecondsLeft > 0)
 			GameServer()->CreateSound(m_Pos, SOUND_PICKUP_HEALTH, CmaskOne(m_pPlayer->GetCID()));
@@ -750,7 +755,7 @@ void CCharacter::Tick()
 		m_HookLatched = false; // a fresh hook shot started
 	if(m_HookPrevState == HOOK_FLYING && m_Core.m_HookState != HOOK_FLYING && m_Core.m_HookState != HOOK_GRABBED && !m_HookLatched
 		&& GameServer()->m_pController->UsesSahScoring())
-		m_Core.m_HookFireDelay = g_pData->m_Weapons.m_aId[WEAPON_RIFLE].m_Firedelay * Server()->TickSpeed() / 1000; // same cd as the fng freeze laser (rifle)
+		m_Core.m_HookFireDelay = g_Config.m_SvSahHookFireDelay * Server()->TickSpeed() / 1000; // configurable re-hook cooldown (like the fng freeze laser)
 	m_HookPrevState = m_Core.m_HookState;
 
 	// Previnput
@@ -1033,7 +1038,14 @@ void CCharacter::DieSpikes(int pPlayerID, int spikes_flag) {
 
 		GameServer()->m_World.RemoveEntity(this);
 		Destroy();
-		GameServer()->CreateDeath(m_Pos, m_pPlayer->GetCID());
+		if(GameServer()->m_pController->UsesSahScoring() && g_Config.m_SvSahDeathStars)
+		{
+			// SAH: star-burst death effect instead of blood — rendered by ANY client
+			// (standard NETEVENTTYPE_SPAWN; replaces the blood of NETEVENTTYPE_DEATH)
+			GameServer()->CreatePlayerSpawn(m_Pos);
+		}
+		else
+			GameServer()->CreateDeath(m_Pos, m_pPlayer->GetCID());
 	}
 
 }
