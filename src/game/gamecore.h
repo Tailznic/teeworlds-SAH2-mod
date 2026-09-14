@@ -187,6 +187,7 @@ public:
 	int m_HookedPlayer;
 	int m_HookBounces; // SAH: remaining hook bounces off unhookable tiles (like a laser)
 	int m_HookFireDelay; // SAH: ticks left before the hook can be re-fired after a hook that latched nothing
+	int m_HookGhost; // SAH: 1 when this hook shot was fired during the cooldown — it moves and drags but never freezes
 
 	int m_Jumped;
 
