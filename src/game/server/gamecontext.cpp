@@ -358,16 +358,16 @@ void CGameContext::CreatePlayerSpawnForClient(vec2 Pos, int ClientID)
 }
 
 // SAH: silent marker event for the custom client — renders diagonal ninja-particle lines
-// at the frozen tee for the freezer only. Sound id 999 is out of range: every client
-// (vanilla too) skips it in CSounds::GetSampleId, so nothing is played.
+// at the frozen tee for the freezer only. Uses the HAMMERHIT channel: it is completely
+// soundless (client just spawns an effect), so no fake sound id hack is needed at all.
+// SAH gives no hammer, so this event can never collide with a real hammer hit.
 void CGameContext::CreateSahFreezeMarker(vec2 Pos, int ClientID)
 {
-	CNetEvent_SoundWorld *ev = (CNetEvent_SoundWorld *)m_Events.Create(NETEVENTTYPE_SOUNDWORLD, sizeof(CNetEvent_SoundWorld), CmaskOne(ClientID));
+	CNetEvent_HammerHit *ev = (CNetEvent_HammerHit *)m_Events.Create(NETEVENTTYPE_HAMMERHIT, sizeof(CNetEvent_HammerHit), CmaskOne(ClientID));
 	if(ev)
 	{
 		ev->m_X = (int)Pos.x;
 		ev->m_Y = (int)Pos.y;
-		ev->m_SoundID = 999;
 	}
 }
 

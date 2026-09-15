@@ -1,0 +1,476 @@
+[1/73] Generating src/game/generated/protocol.h
+[2/73] Generating src/game/generated/protocol.cpp
+[3/73] Building C object CMakeFiles/zlib.dir/src/engine/external/zlib/zutil.c.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/zutil.c: In function 'zError':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/zutil.c:136:22: warning: old-style function definition [-Wold-style-definition]
+  136 | const char * ZEXPORT zError(err)
+      |                      ^~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/zutil.c: In function 'zcalloc':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/zutil.c:304:22: warning: old-style function definition [-Wold-style-definition]
+  304 | voidpf ZLIB_INTERNAL zcalloc (opaque, items, size)
+      |                      ^~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/zutil.c: In function 'zcfree':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/zutil.c:314:20: warning: old-style function definition [-Wold-style-definition]
+  314 | void ZLIB_INTERNAL zcfree (opaque, ptr)
+      |                    ^~~~~~
+[4/73] Building C object CMakeFiles/zlib.dir/src/engine/external/zlib/compress.c.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/compress.c: In function 'compress2':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/compress.c:22:13: warning: old-style function definition [-Wold-style-definition]
+   22 | int ZEXPORT compress2 (dest, destLen, source, sourceLen, level)
+      |             ^~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/compress.c: In function 'compress':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/compress.c:62:13: warning: old-style function definition [-Wold-style-definition]
+   62 | int ZEXPORT compress (dest, destLen, source, sourceLen)
+      |             ^~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/compress.c: In function 'compressBound':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/compress.c:75:15: warning: old-style function definition [-Wold-style-definition]
+   75 | uLong ZEXPORT compressBound (sourceLen)
+      |               ^~~~~~~~~~~~~
+[5/73] Building C object CMakeFiles/zlib.dir/src/engine/external/zlib/uncompr.c.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/uncompr.c: In function 'uncompress':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/uncompr.c:24:13: warning: old-style function definition [-Wold-style-definition]
+   24 | int ZEXPORT uncompress (dest, destLen, source, sourceLen)
+      |             ^~~~~~~~~~
+[6/73] Building C object CMakeFiles/zlib.dir/src/engine/external/zlib/adler32.c.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/adler32.c: In function 'adler32':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/adler32.c:65:15: warning: old-style function definition [-Wold-style-definition]
+   65 | uLong ZEXPORT adler32(adler, buf, len)
+      |               ^~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/adler32.c: In function 'adler32_combine_':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/adler32.c:136:13: warning: old-style function definition [-Wold-style-definition]
+  136 | local uLong adler32_combine_(adler1, adler2, len2)
+      |             ^~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/adler32.c: In function 'adler32_combine':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/adler32.c:165:15: warning: old-style function definition [-Wold-style-definition]
+  165 | uLong ZEXPORT adler32_combine(adler1, adler2, len2)
+      |               ^~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/adler32.c: In function 'adler32_combine64':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/adler32.c:173:15: warning: old-style function definition [-Wold-style-definition]
+  173 | uLong ZEXPORT adler32_combine64(adler1, adler2, len2)
+      |               ^~~~~~~~~~~~~~~~~
+[7/73] Building C object CMakeFiles/zlib.dir/src/engine/external/zlib/inftrees.c.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inftrees.c: In function 'inflate_table':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inftrees.c:32:19: warning: old-style function definition [-Wold-style-definition]
+   32 | int ZLIB_INTERNAL inflate_table(type, lens, codes, table, bits, work)
+      |                   ^~~~~~~~~~~~~
+[8/73] Building C object CMakeFiles/zlib.dir/src/engine/external/zlib/crc32.c.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c: In function 'crc32':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c:204:23: warning: old-style function definition [-Wold-style-definition]
+  204 | unsigned long ZEXPORT crc32(crc, buf, len)
+      |                       ^~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c: In function 'crc32_little':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c:247:21: warning: old-style function definition [-Wold-style-definition]
+  247 | local unsigned long crc32_little(crc, buf, len)
+      |                     ^~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c: In function 'crc32_big':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c:287:21: warning: old-style function definition [-Wold-style-definition]
+  287 | local unsigned long crc32_big(crc, buf, len)
+      |                     ^~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c: In function 'gf2_matrix_times':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c:327:21: warning: old-style function definition [-Wold-style-definition]
+  327 | local unsigned long gf2_matrix_times(mat, vec)
+      |                     ^~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c: In function 'gf2_matrix_square':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c:344:12: warning: old-style function definition [-Wold-style-definition]
+  344 | local void gf2_matrix_square(square, mat)
+      |            ^~~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c: In function 'crc32_combine_':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c:355:13: warning: old-style function definition [-Wold-style-definition]
+  355 | local uLong crc32_combine_(crc1, crc2, len2)
+      |             ^~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c: In function 'crc32_combine':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c:411:15: warning: old-style function definition [-Wold-style-definition]
+  411 | uLong ZEXPORT crc32_combine(crc1, crc2, len2)
+      |               ^~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c: In function 'crc32_combine64':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/crc32.c:419:15: warning: old-style function definition [-Wold-style-definition]
+  419 | uLong ZEXPORT crc32_combine64(crc1, crc2, len2)
+      |               ^~~~~~~~~~~~~~~
+[9/73] Building C object CMakeFiles/md5.dir/src/engine/external/md5/md5.c.obj
+[10/73] Building C object CMakeFiles/zlib.dir/src/engine/external/zlib/inffast.c.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inffast.c: In function 'inflate_fast':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inffast.c:67:20: warning: old-style function definition [-Wold-style-definition]
+   67 | void ZLIB_INTERNAL inflate_fast(strm, start)
+      |                    ^~~~~~~~~~~~
+[11/73] Building C object CMakeFiles/zlib.dir/src/engine/external/zlib/infback.c.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/infback.c: In function 'inflateBackInit_':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/infback.c:28:13: warning: old-style function definition [-Wold-style-definition]
+   28 | int ZEXPORT inflateBackInit_(strm, windowBits, window, version, stream_size)
+      |             ^~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/infback.c: In function 'fixedtables':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/infback.c:82:12: warning: old-style function definition [-Wold-style-definition]
+   82 | local void fixedtables(state)
+      |            ^~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/infback.c: In function 'inflateBack':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/infback.c:250:13: warning: old-style function definition [-Wold-style-definition]
+  250 | int ZEXPORT inflateBack(strm, in, in_desc, out, out_desc)
+      |             ^~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/infback.c: In function 'inflateBackEnd':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/infback.c:631:13: warning: old-style function definition [-Wold-style-definition]
+  631 | int ZEXPORT inflateBackEnd(strm)
+      |             ^~~~~~~~~~~~~~
+[12/73] Building C object CMakeFiles/zlib.dir/src/engine/external/zlib/trees.c.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function '_tr_init':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:381:20: warning: old-style function definition [-Wold-style-definition]
+  381 | void ZLIB_INTERNAL _tr_init(s)
+      |                    ^~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'init_block':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:409:12: warning: old-style function definition [-Wold-style-definition]
+  409 | local void init_block(s)
+      |            ^~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'pqdownheap':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:453:12: warning: old-style function definition [-Wold-style-definition]
+  453 | local void pqdownheap(s, tree, k)
+      |            ^~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'gen_bitlen':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:488:12: warning: old-style function definition [-Wold-style-definition]
+  488 | local void gen_bitlen(s, desc)
+      |            ^~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'gen_codes':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:575:12: warning: old-style function definition [-Wold-style-definition]
+  575 | local void gen_codes (tree, max_code, bl_count)
+      |            ^~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'build_tree':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:617:12: warning: old-style function definition [-Wold-style-definition]
+  617 | local void build_tree(s, desc)
+      |            ^~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'scan_tree':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:705:12: warning: old-style function definition [-Wold-style-definition]
+  705 | local void scan_tree (s, tree, max_code)
+      |            ^~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'send_tree':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:750:12: warning: old-style function definition [-Wold-style-definition]
+  750 | local void send_tree (s, tree, max_code)
+      |            ^~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'build_bl_tree':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:801:11: warning: old-style function definition [-Wold-style-definition]
+  801 | local int build_bl_tree(s)
+      |           ^~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'send_all_trees':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:836:12: warning: old-style function definition [-Wold-style-definition]
+  836 | local void send_all_trees(s, lcodes, dcodes, blcodes)
+      |            ^~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function '_tr_stored_block':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:865:20: warning: old-style function definition [-Wold-style-definition]
+  865 | void ZLIB_INTERNAL _tr_stored_block(s, buf, stored_len, last)
+      |                    ^~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function '_tr_flush_bits':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:882:20: warning: old-style function definition [-Wold-style-definition]
+  882 | void ZLIB_INTERNAL _tr_flush_bits(s)
+      |                    ^~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function '_tr_align':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:892:20: warning: old-style function definition [-Wold-style-definition]
+  892 | void ZLIB_INTERNAL _tr_align(s)
+      |                    ^~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function '_tr_flush_block':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:907:20: warning: old-style function definition [-Wold-style-definition]
+  907 | void ZLIB_INTERNAL _tr_flush_block(s, buf, stored_len, last)
+      |                    ^~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function '_tr_tally':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:1010:19: warning: old-style function definition [-Wold-style-definition]
+ 1010 | int ZLIB_INTERNAL _tr_tally (s, dist, lc)
+      |                   ^~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'compress_block':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:1060:12: warning: old-style function definition [-Wold-style-definition]
+ 1060 | local void compress_block(s, ltree, dtree)
+      |            ^~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'detect_data_type':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:1120:11: warning: old-style function definition [-Wold-style-definition]
+ 1120 | local int detect_data_type(s)
+      |           ^~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'bi_reverse':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:1154:16: warning: old-style function definition [-Wold-style-definition]
+ 1154 | local unsigned bi_reverse(code, len)
+      |                ^~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'bi_flush':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:1169:12: warning: old-style function definition [-Wold-style-definition]
+ 1169 | local void bi_flush(s)
+      |            ^~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'bi_windup':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:1186:12: warning: old-style function definition [-Wold-style-definition]
+ 1186 | local void bi_windup(s)
+      |            ^~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c: In function 'copy_block':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/trees.c:1205:12: warning: old-style function definition [-Wold-style-definition]
+ 1205 | local void copy_block(s, buf, len, header)
+      |            ^~~~~~~~~~
+[13/73] Building C object CMakeFiles/zlib.dir/src/engine/external/zlib/inflate.c.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflateResetKeep':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:104:13: warning: old-style function definition [-Wold-style-definition]
+  104 | int ZEXPORT inflateResetKeep(strm)
+      |             ^~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflateReset':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:129:13: warning: old-style function definition [-Wold-style-definition]
+  129 | int ZEXPORT inflateReset(strm)
+      |             ^~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflateReset2':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:142:13: warning: old-style function definition [-Wold-style-definition]
+  142 | int ZEXPORT inflateReset2(strm, windowBits)
+      |             ^~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflateInit2_':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:180:13: warning: old-style function definition [-Wold-style-definition]
+  180 | int ZEXPORT inflateInit2_(strm, windowBits, version, stream_size)
+      |             ^~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflateInit_':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:222:13: warning: old-style function definition [-Wold-style-definition]
+  222 | int ZEXPORT inflateInit_(strm, version, stream_size)
+      |             ^~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflatePrime':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:230:13: warning: old-style function definition [-Wold-style-definition]
+  230 | int ZEXPORT inflatePrime(strm, bits, value)
+      |             ^~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'fixedtables':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:261:12: warning: old-style function definition [-Wold-style-definition]
+  261 | local void fixedtables(state)
+      |            ^~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'updatewindow':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:379:11: warning: old-style function definition [-Wold-style-definition]
+  379 | local int updatewindow(strm, end, copy)
+      |           ^~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflate':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:605:13: warning: old-style function definition [-Wold-style-definition]
+  605 | int ZEXPORT inflate(strm, flush)
+      |             ^~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflateEnd':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:1254:13: warning: old-style function definition [-Wold-style-definition]
+ 1254 | int ZEXPORT inflateEnd(strm)
+      |             ^~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflateGetDictionary':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:1268:13: warning: old-style function definition [-Wold-style-definition]
+ 1268 | int ZEXPORT inflateGetDictionary(strm, dictionary, dictLength)
+      |             ^~~~~~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflateSetDictionary':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:1291:13: warning: old-style function definition [-Wold-style-definition]
+ 1291 | int ZEXPORT inflateSetDictionary(strm, dictionary, dictLength)
+      |             ^~~~~~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflateGetHeader':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:1326:13: warning: old-style function definition [-Wold-style-definition]
+ 1326 | int ZEXPORT inflateGetHeader(strm, head)
+      |             ^~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'syncsearch':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:1354:16: warning: old-style function definition [-Wold-style-definition]
+ 1354 | local unsigned syncsearch(have, buf, len)
+      |                ^~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflateSync':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:1377:13: warning: old-style function definition [-Wold-style-definition]
+ 1377 | int ZEXPORT inflateSync(strm)
+      |             ^~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflateSyncPoint':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:1428:13: warning: old-style function definition [-Wold-style-definition]
+ 1428 | int ZEXPORT inflateSyncPoint(strm)
+      |             ^~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflateCopy':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:1438:13: warning: old-style function definition [-Wold-style-definition]
+ 1438 | int ZEXPORT inflateCopy(dest, source)
+      |             ^~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflateUndermine':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:1485:13: warning: old-style function definition [-Wold-style-definition]
+ 1485 | int ZEXPORT inflateUndermine(strm, subvert)
+      |             ^~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c: In function 'inflateMark':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/inflate.c:1502:14: warning: old-style function definition [-Wold-style-definition]
+ 1502 | long ZEXPORT inflateMark(strm)
+      |              ^~~~~~~~~~~
+[14/73] Building C object CMakeFiles/zlib.dir/src/engine/external/zlib/deflate.c.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflateInit_':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:201:13: warning: old-style function definition [-Wold-style-definition]
+  201 | int ZEXPORT deflateInit_(strm, level, version, stream_size)
+      |             ^~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflateInit2_':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:213:13: warning: old-style function definition [-Wold-style-definition]
+  213 | int ZEXPORT deflateInit2_(strm, level, method, windowBits, memLevel, strategy,
+      |             ^~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflateSetDictionary':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:323:13: warning: old-style function definition [-Wold-style-definition]
+  323 | int ZEXPORT deflateSetDictionary (strm, dictionary, dictLength)
+      |             ^~~~~~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflateResetKeep':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:392:13: warning: old-style function definition [-Wold-style-definition]
+  392 | int ZEXPORT deflateResetKeep (strm)
+      |             ^~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflateReset':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:427:13: warning: old-style function definition [-Wold-style-definition]
+  427 | int ZEXPORT deflateReset (strm)
+      |             ^~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflateSetHeader':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:439:13: warning: old-style function definition [-Wold-style-definition]
+  439 | int ZEXPORT deflateSetHeader (strm, head)
+      |             ^~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflatePending':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:450:13: warning: old-style function definition [-Wold-style-definition]
+  450 | int ZEXPORT deflatePending (strm, pending, bits)
+      |             ^~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflatePrime':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:464:13: warning: old-style function definition [-Wold-style-definition]
+  464 | int ZEXPORT deflatePrime (strm, bits, value)
+      |             ^~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflateParams':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:490:13: warning: old-style function definition [-Wold-style-definition]
+  490 | int ZEXPORT deflateParams(strm, level, strategy)
+      |             ^~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflateTune':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:531:13: warning: old-style function definition [-Wold-style-definition]
+  531 | int ZEXPORT deflateTune(strm, good_length, max_lazy, nice_length, max_chain)
+      |             ^~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflateBound':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:566:15: warning: old-style function definition [-Wold-style-definition]
+  566 | uLong ZEXPORT deflateBound(strm, sourceLen)
+      |               ^~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'putShortMSB':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:628:12: warning: old-style function definition [-Wold-style-definition]
+  628 | local void putShortMSB (s, b)
+      |            ^~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'flush_pending':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:642:12: warning: old-style function definition [-Wold-style-definition]
+  642 | local void flush_pending(strm)
+      |            ^~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflate':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:665:13: warning: old-style function definition [-Wold-style-definition]
+  665 | int ZEXPORT deflate (strm, flush)
+      |             ^~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflateEnd':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:979:13: warning: old-style function definition [-Wold-style-definition]
+  979 | int ZEXPORT deflateEnd (strm)
+      |             ^~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflateCopy':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:1014:13: warning: old-style function definition [-Wold-style-definition]
+ 1014 | int ZEXPORT deflateCopy (dest, source)
+      |             ^~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'read_buf':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:1076:11: warning: old-style function definition [-Wold-style-definition]
+ 1076 | local int read_buf(strm, buf, size)
+      |           ^~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'lm_init':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:1106:12: warning: old-style function definition [-Wold-style-definition]
+ 1106 | local void lm_init (s)
+      |            ^~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'longest_match':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:1148:12: warning: old-style function definition [-Wold-style-definition]
+ 1148 | local uInt longest_match(s, cur_match)
+      |            ^~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'fill_window':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:1390:12: warning: old-style function definition [-Wold-style-definition]
+ 1390 | local void fill_window(s)
+      |            ^~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflate_stored':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:1564:19: warning: old-style function definition [-Wold-style-definition]
+ 1564 | local block_state deflate_stored(s, flush)
+      |                   ^~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflate_fast':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:1628:19: warning: old-style function definition [-Wold-style-definition]
+ 1628 | local block_state deflate_fast(s, flush)
+      |                   ^~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflate_slow':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:1730:19: warning: old-style function definition [-Wold-style-definition]
+ 1730 | local block_state deflate_slow(s, flush)
+      |                   ^~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflate_rle':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:1861:19: warning: old-style function definition [-Wold-style-definition]
+ 1861 | local block_state deflate_rle(s, flush)
+      |                   ^~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c: In function 'deflate_huff':
+C:/Users/tailznic/Downloads/SNH/src/engine/external/zlib/deflate.c:1934:19: warning: old-style function definition [-Wold-style-definition]
+ 1934 | local block_state deflate_huff(s, flush)
+      |                   ^~~~~~~~~~~~
+[15/73] Generating src/game/generated/nethash.cpp
+C:\Users\tailznic\Downloads\SNH\scripts\cmd5.py:11: SyntaxWarning: "\/" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\/"? A raw string is also an option.
+  d = re.sub("\/\*.*?\*/".encode(), "".encode(), d) # remove /* */ comments
+[16/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/network_console.cpp.obj
+[17/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/memheap.cpp.obj
+[18/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/linereader.cpp.obj
+[19/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/jobs.cpp.obj
+[20/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/network_client.cpp.obj
+[21/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/network_console_conn.cpp.obj
+[22/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/econ.cpp.obj
+[23/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/compression.cpp.obj
+[24/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/kernel.cpp.obj
+[25/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/mapchecker.cpp.obj
+[26/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/map.cpp.obj
+[27/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/engine.cpp.obj
+[28/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/masterserver.cpp.obj
+[29/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/filecollection.cpp.obj
+[30/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/network.cpp.obj
+[31/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/network_conn.cpp.obj
+[32/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/huffman.cpp.obj
+[33/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/config.cpp.obj
+[34/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/datafile.cpp.obj
+[35/73] Building CXX object CMakeFiles/engine-shared.dir/src/game/generated/nethash.cpp.obj
+[36/73] Building CXX object CMakeFiles/game-shared.dir/src/game/generated/nethash.cpp.obj
+[37/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/packer.cpp.obj
+[38/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/ringbuffer.cpp.obj
+[39/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/netban.cpp.obj
+[40/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/storage.cpp.obj
+[41/73] Building CXX object CMakeFiles/engine-shared.dir/src/game/generated/protocol.cpp.obj
+[42/73] Building CXX object CMakeFiles/game-shared.dir/src/game/layers.cpp.obj
+[43/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/network_server.cpp.obj
+[44/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/demo.cpp.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/shared/demo.cpp: In member function 'void CDemoRecorder::AddDemoMarker()':
+C:/Users/tailznic/Downloads/SNH/src/engine/shared/demo.cpp:309:44: warning: arithmetic between enumeration type '<unnamed enum>' and floating-point type 'float' is deprecated [-Wdeprecated-enum-float-conversion]
+  309 |                 if(Diff < SERVER_TICK_SPEED*1.0f)
+      |                           ~~~~~~~~~~~~~~~~~^~~~~
+[45/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/console.cpp.obj
+[46/73] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/snapshot.cpp.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/shared/snapshot.cpp: In member function 'int CSnapshotDelta::CreateDelta(CSnapshot*, CSnapshot*, void*)':
+C:/Users/tailznic/Downloads/SNH/src/engine/shared/snapshot.cpp:170:13: warning: variable 'Count' set but not used [-Wunused-but-set-variable=]
+  170 |         int Count = 0;
+      |             ^~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/shared/snapshot.cpp:171:13: warning: variable 'SizeCount' set but not used [-Wunused-but-set-variable=]
+  171 |         int SizeCount = 0;
+      |             ^~~~~~~~~
+[47/73] Building CXX object CMakeFiles/game-shared.dir/src/game/collision.cpp.obj
+[48/73] Building CXX object CMakeFiles/game-shared.dir/src/game/gamecore.cpp.obj
+[49/73] Building C object CMakeFiles/engine-shared.dir/src/base/system.c.obj
+C:/Users/tailznic/Downloads/SNH/src/base/system.c: In function 'thread_init':
+C:/Users/tailznic/Downloads/SNH/src/base/system.c:337:38: warning: cast between incompatible function types from 'void (*)(void *)' to 'DWORD (*)(void *)' {aka 'long unsigned int (*)(void *)'} [-Wcast-function-type]
+  337 |         return CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)threadfunc, u, 0, NULL);
+      |                                      ^
+In function 'sockaddr_to_netaddr',
+    inlined from 'net_tcp_accept' at C:/Users/tailznic/Downloads/SNH/src/base/system.c:1157:4:
+C:/Users/tailznic/Downloads/SNH/src/base/system.c:559:29: warning: array subscript 'struct sockaddr_in6[0]' is partly outside array bounds of 'struct sockaddr_in[1]' [-Warray-bounds=]
+  559 |                 dst->port = htons(((struct sockaddr_in6*)src)->sin6_port);
+      |                             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/base/system.c: In function 'net_tcp_accept':
+C:/Users/tailznic/Downloads/SNH/src/base/system.c:1150:36: note: object 'addr' of size 16
+ 1150 |                 struct sockaddr_in addr;
+      |                                    ^~~~
+In function 'mem_copy',
+    inlined from 'sockaddr_to_netaddr' at C:/Users/tailznic/Downloads/SNH/src/base/system.c:560:3,
+    inlined from 'net_tcp_accept' at C:/Users/tailznic/Downloads/SNH/src/base/system.c:1157:4:
+C:/Users/tailznic/Downloads/SNH/src/base/system.c:197:9: warning: array subscript '__int128 unsigned[0]' is partly outside array bounds of 'struct sockaddr_in[1]' [-Warray-bounds=]
+  197 |         memcpy(dest, source, size);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/base/system.c: In function 'net_tcp_accept':
+C:/Users/tailznic/Downloads/SNH/src/base/system.c:1150:36: note: at offset 8 into object 'addr' of size 16
+ 1150 |                 struct sockaddr_in addr;
+      |                                    ^~~~
+[50/73] Generating src/game/generated/server_data.cpp
+[51/73] Generating src/game/generated/server_data.h
+[52/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/generated/server_data.cpp.obj
+[53/73] Building CXX object CMakeFiles/fng2_srv.dir/src/engine/server/register.cpp.obj
+[54/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2boom.cpp.obj
+[55/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/eventhandler.cpp.obj
+[56/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2boomsolo.cpp.obj
+[57/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2solo.cpp.obj
+[58/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/flag.cpp.obj
+[59/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entity.cpp.obj
+[60/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/pickup.cpp.obj
+[61/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/sah.cpp.obj
+[62/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/laser.cpp.obj
+[63/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gameworld.cpp.obj
+[64/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/projectile.cpp.obj
+[65/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2.cpp.obj
+[66/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/player.cpp.obj
+[67/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/laserText.cpp.obj
+[68/73] Building CXX object CMakeFiles/fng2_srv.dir/src/engine/server/server.cpp.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/server/server.cpp: In static member function 'static void CServer::SendRconLineAuthed(const char*, void*)':
+C:/Users/tailznic/Downloads/SNH/src/engine/server/server.cpp:899:9: warning: '++' expression of 'volatile'-qualified type is deprecated [-Wvolatile]
+  899 |         ReentryGuard++;
+      |         ^~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/server/server.cpp:907:9: warning: '--' expression of 'volatile'-qualified type is deprecated [-Wvolatile]
+  907 |         ReentryGuard--;
+      |         ^~~~~~~~~~~~
+[69/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamecontroller.cpp.obj
+[70/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2_4teams.cpp.obj
+[71/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/character.cpp.obj
+[72/73] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamecontext.cpp.obj
+[73/73] Linking CXX executable fng2_srv.exe

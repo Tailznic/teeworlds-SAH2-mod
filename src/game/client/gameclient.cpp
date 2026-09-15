@@ -594,7 +594,13 @@ void CGameClient::ProcessEvents()
 		else if(Item.m_Type == NETEVENTTYPE_HAMMERHIT)
 		{
 			CNetEvent_HammerHit *ev = (CNetEvent_HammerHit *)pData;
-			g_GameClient.m_pEffects->HammerHit(vec2(ev->m_X, ev->m_Y));
+			// SAH: the hammer-hit channel doubles as the silent freeze marker — it carries
+			// no sound, so diagonal ninja-particle lines are drawn without any sample
+			// (masked to the freezer server-side). SAH has no hammer, so no conflict.
+			if(g_GameClient.m_SahMode)
+				g_GameClient.m_pEffects->SahFreezeLines(vec2(ev->m_X, ev->m_Y));
+			else
+				g_GameClient.m_pEffects->HammerHit(vec2(ev->m_X, ev->m_Y));
 		}
 		else if(Item.m_Type == NETEVENTTYPE_SPAWN)
 		{
@@ -609,12 +615,7 @@ void CGameClient::ProcessEvents()
 		else if(Item.m_Type == NETEVENTTYPE_SOUNDWORLD)
 		{
 			CNetEvent_SoundWorld *ev = (CNetEvent_SoundWorld *)pData;
-			// SAH: id 999 is the silent freeze marker -> only diagonal ninja-particle lines,
-			// never play a sample for it (masked to the freezer server-side)
-			if(g_GameClient.m_SahMode && ev->m_SoundID == 999)
-				g_GameClient.m_pEffects->SahFreezeLines(vec2(ev->m_X, ev->m_Y));
-			else
-				g_GameClient.m_pSounds->PlayAt(CSounds::CHN_WORLD, ev->m_SoundID, 1.0f, vec2(ev->m_X, ev->m_Y));
+			g_GameClient.m_pSounds->PlayAt(CSounds::CHN_WORLD, ev->m_SoundID, 1.0f, vec2(ev->m_X, ev->m_Y));
 		}
 	}
 }

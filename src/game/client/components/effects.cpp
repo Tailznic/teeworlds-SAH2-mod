@@ -245,10 +245,10 @@ void CEffects::SahFreezeLines(vec2 Pos)
 			p.SetDefault();
 			p.m_Spr = SPRITE_PART_SLICE;
 			// SAH: start further out so the lines cover a bigger radius around the tee
-			p.m_Pos = Pos + Dir * (32.0f + frandom() * 96.0f);
+			p.m_Pos = Pos + Dir * (96.0f + frandom() * 224.0f);
 			p.m_Vel = Dir * (500.0f + frandom() * 500.0f);
-			p.m_LifeSpan = 0.35f + frandom() * 0.4f;
-			p.m_StartSize = 22.0f + frandom() * 26.0f;
+			p.m_LifeSpan = 0.45f + frandom() * 0.45f;
+			p.m_StartSize = 26.0f + frandom() * 30.0f;
 			p.m_EndSize = 0;
 			p.m_Rot = frandom() * pi * 2;
 			p.m_Rotspeed = (frandom() - 0.5f) * pi;
