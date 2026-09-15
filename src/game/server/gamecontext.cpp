@@ -171,6 +171,22 @@ void CGameContext::CreateDamageInd(vec2 Pos, float Angle, int Amount, int Team, 
 	}
 }
 
+// SAH: single-direction sparks visible only to one client (used by the
+// cooldown loading ring — small FreezingFlakes-like particles, no sound)
+void CGameContext::CreateDamageIndForClient(vec2 Pos, float Angle, int Amount, int ClientID)
+{
+	for(int i = 0; i < Amount; ++i)
+	{
+		CNetEvent_DamageInd *pEvent = (CNetEvent_DamageInd *)m_Events.Create(NETEVENTTYPE_DAMAGEIND, sizeof(CNetEvent_DamageInd), CmaskOne(ClientID));
+		if(pEvent)
+		{
+			pEvent->m_X = (int)Pos.x;
+			pEvent->m_Y = (int)Pos.y;
+			pEvent->m_Angle = (int)(Angle * 256.0f);
+		}
+	}
+}
+
 void CGameContext::CreateSoundTeam(vec2 Pos, int Sound, int TeamID, int FromPlayerID)
 {
 	if (Sound < 0)

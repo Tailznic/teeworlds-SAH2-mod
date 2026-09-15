@@ -757,6 +757,38 @@ void CCharacter::Tick()
 		m_Core.m_HookFireDelay = g_Config.m_SvSahHookFireDelay * Server()->TickSpeed() / 1000; // configurable re-hook cooldown (like the fng freeze laser)
 	m_HookPrevState = m_Core.m_HookState;
 
+	// SAH: re-hook cooldown loading ring (drawn "in reverse") — a shrinking ring of
+	// spark particles around the tee. Appears right after a missed hook shot, follows
+	// the player, shrinks as the cooldown progresses (full ring = nearly recharged).
+	// Visible ONLY to the owner, absolutely silent (DAMAGEIND sparks, no samples).
+	if(GameServer()->m_pController->UsesSahScoring() && g_Config.m_SvSahCooldownRing
+		&& m_Core.m_HookFireDelay > 0 && Server()->Tick() % 2 == 0)
+	{
+		int TotalTicks = g_Config.m_SvSahHookFireDelay * Server()->TickSpeed() / 1000;
+		if(TotalTicks > 0)
+		{
+			// progress 0 (just missed) → 1 (about to recharge)
+			float Progress = 1.0f - (float)m_Core.m_HookFireDelay / (float)TotalTicks;
+			if(Progress < 0.0f) Progress = 0.0f;
+			if(Progress > 1.0f) Progress = 1.0f;
+
+			// the ring shrinks as the hook recharges: 70 units (just missed) → 16 (ready)
+			float Radius = 70.0f - 54.0f * Progress;
+			// slow rotation so the ring looks alive while it closes in
+			float Spin = (float)(Server()->Tick() % 50) * (3.14159f * 2.0f / 50.0f);
+
+			// 12 spark positions evenly spread around the tee, each spark flying INWARD
+			// (towards the tee center) — the ring is a loading indicator "in reverse"
+			for(int i = 0; i < 12; ++i)
+			{
+				float RingAngle = Spin + 3.14159f * 2.0f * (float)i / 12.0f;
+				vec2 RingPos = m_Pos + vec2(cos(RingAngle), sin(RingAngle)) * Radius;
+				float InwardAngle = RingAngle + 3.14159f; // direction from the ring point towards the tee
+				GameServer()->CreateDamageIndForClient(RingPos, InwardAngle, 1, m_pPlayer->GetCID());
+			}
+		}
+	}
+
 	// Previnput
 	m_PrevInput = m_Input;
 

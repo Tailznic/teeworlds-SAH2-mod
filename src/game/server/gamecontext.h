@@ -254,6 +254,7 @@ public:
 	void MakeLaserTextFreeze(vec2 pPos, int pOwner, int pSeconds);
 	
 	void CreateDamageInd(vec2 Pos, float AngleMod, int Amount, int Team, int FromPlayerID = -1);
+	void CreateDamageIndForClient(vec2 Pos, float Angle, int Amount, int ClientID);
 	void CreateSoundTeam(vec2 Pos, int Sound, int TeamID, int FromPlayerID = -1);
 
 	void CreateExplosion(vec2 Pos, int Owner, int Weapon, bool NoDamage, QuadroMask Mask=QuadroMask(-1ll));
