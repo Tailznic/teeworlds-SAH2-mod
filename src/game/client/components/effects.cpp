@@ -208,13 +208,14 @@ void CEffects::PlayerDeath(vec2 Pos, int ClientID)
 // SAH: snowfall on spike death — soft white flakes drifting down from above the death spot
 void CEffects::SahDeathSnow(vec2 Pos, int ClientID)
 {
-	for(int i = 0; i < 48; i++)
+	for(int i = 0; i < 24; i++)
 	{
 		CParticle p;
 		p.SetDefault();
 		p.m_Spr = SPRITE_PART_BALL;
-		p.m_Pos = Pos + vec2((frandom()-0.5f) * 160.0f, -40.0f + (frandom()-0.5f) * 80.0f);
-		p.m_Vel = vec2((frandom()-0.5f) * 120.0f, 150.0f + frandom() * 350.0f);
+		// SAH: wide snowfall cloud — big radius, few flakes
+		p.m_Pos = Pos + vec2((frandom()-0.5f) * 420.0f, -90.0f + (frandom()-0.5f) * 220.0f);
+		p.m_Vel = vec2((frandom()-0.5f) * 180.0f, 150.0f + frandom() * 350.0f);
 		p.m_LifeSpan = 0.8f + frandom() * 0.6f;
 		p.m_StartSize = 10.0f + frandom() * 14.0f;
 		p.m_EndSize = 0;
@@ -243,10 +244,11 @@ void CEffects::SahFreezeLines(vec2 Pos)
 			CParticle p;
 			p.SetDefault();
 			p.m_Spr = SPRITE_PART_SLICE;
-			p.m_Pos = Pos + Dir * (8.0f + frandom() * 24.0f);
+			// SAH: start further out so the lines cover a bigger radius around the tee
+			p.m_Pos = Pos + Dir * (32.0f + frandom() * 96.0f);
 			p.m_Vel = Dir * (500.0f + frandom() * 500.0f);
-			p.m_LifeSpan = 0.25f + frandom() * 0.35f;
-			p.m_StartSize = 18.0f + frandom() * 22.0f;
+			p.m_LifeSpan = 0.35f + frandom() * 0.4f;
+			p.m_StartSize = 22.0f + frandom() * 26.0f;
 			p.m_EndSize = 0;
 			p.m_Rot = frandom() * pi * 2;
 			p.m_Rotspeed = (frandom() - 0.5f) * pi;

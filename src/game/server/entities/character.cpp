@@ -189,12 +189,10 @@ void CCharacter::HandleFreeze()
 				GameServer()->CreateDamageIndForClient(m_Pos + vec2(cos(a), sin(a)) * 48.0f, a, 1, m_FreezeOwnerID);
 			}
 		}
-		// SAH: tick sound (like a clock) for the frozen player
+		// SAH: tick sound (like a clock) for the frozen player only
+		// (the freezer keeps the visual marker but gets no sound)
 		if(SecondsLeft > 0)
 			GameServer()->CreateSound(m_Pos, SOUND_PICKUP_HEALTH, CmaskOne(m_pPlayer->GetCID()));
-		// SAH: the freezer hears the same tick sound as the frozen player
-		if(m_FreezeOwnerID >= 0 && SecondsLeft > 0)
-			GameServer()->CreateSound(m_Pos, SOUND_PICKUP_HEALTH, CmaskOne(m_FreezeOwnerID));
 	}
 
 	if ((Server()->Tick() - m_Freeze.m_ActivationTick) > (m_Freeze.m_Duration * Server()->TickSpeed()))
