@@ -56,6 +56,6 @@ MACRO_CONFIG_INT(SvSahShotsToUnfreeze, sv_sah_shots_to_unfreeze, 4, 1, 10, CFGFL
 MACRO_CONFIG_INT(SvSahHookableHook, sv_sah_hookable_hook, 0, 0, 1, CFGFLAG_SERVER, "SAH: unhookable тайлы отскакивают хук как лазер (1=да, 0=стандарт)")
 MACRO_CONFIG_INT(SvSahHookBounces, sv_sah_hook_bounces, 3, 1, 5, CFGFLAG_SERVER, "SAH: максимальное количество отскоков хука")
 MACRO_CONFIG_INT(SvSahScoreLimit, sv_sah_score_limit, 2000, 0, 2000, CFGFLAG_SERVER, "SAH: максимальный лимит очков (0 = без лимита, до 2000)")
-MACRO_CONFIG_INT(SvSahDeathStars, sv_sah_death_stars, 1, 0, 1, CFGFLAG_SERVER, "SAH: красивая анимация смерти от шипов (1=белые снежные клубы вместо крови, работает на любом клиенте; 0=стандартная кровь)")
+MACRO_CONFIG_INT(SvSahDeathStars, sv_sah_death_stars, 1, 0, 1, CFGFLAG_SERVER, "SAH: анимация смерти от шипов (1=сиреневые звёзды вместо крови, работает на любом клиенте; 0=стандартная кровь)")
 MACRO_CONFIG_INT(SvSahFreezeMarkerSpawn, sv_sah_freeze_marker_spawn, 1, 0, 1, CFGFLAG_SERVER, "SAH: белый снежный маркер у замороженного, видит только фризер (1=вкл, беззвучный; 0=выкл)")
 MACRO_CONFIG_INT(SvSahHookFireDelay, sv_sah_hook_fire_delay, 800, 0, 3000, CFGFLAG_SERVER, "SAH: кулдаун пере-хука после промаха в мс (0 = без кулдауна)")

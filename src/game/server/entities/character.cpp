@@ -1046,15 +1046,11 @@ void CCharacter::DieSpikes(int pPlayerID, int spikes_flag) {
 		Destroy();
 		if(GameServer()->m_pController->UsesSahScoring() && g_Config.m_SvSahDeathStars)
 		{
-			// SAH: snow-puff death effect instead of blood — silent white explosion puffs
-			// scattered around the death spot; rendered by ANY client (incl. vanilla DDNet/Rushie).
-			// NETEVENTTYPE_EXPLOSION is visual-only here (NoDamage) and plays no sample.
-			GameServer()->CreateExplosion(m_Pos, m_pPlayer->GetCID(), WEAPON_WORLD, true);
-			for(int i = 0; i < 3; i++)
-			{
-				vec2 Offset = vec2((float)(rand() % 129) - 64.0f, (float)(rand() % 129) - 64.0f);
-				GameServer()->CreateExplosion(m_Pos + Offset, m_pPlayer->GetCID(), WEAPON_WORLD, true);
-			}
+			// SAH: magic-star death effect instead of blood — standard NETEVENTTYPE_SPAWN,
+			// rendered by ANY client (incl. vanilla DDNet/Rushie).
+			// NOTE: the real FreezingFlakes snow particles cannot be triggered by a 0.6
+			// server at all — Rushie draws them only from 0.7 extended data (m_FreezeEnd).
+			GameServer()->CreatePlayerSpawn(m_Pos);
 		}
 		else
 			GameServer()->CreateDeath(m_Pos, m_pPlayer->GetCID());
