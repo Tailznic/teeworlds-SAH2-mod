@@ -39,6 +39,9 @@ void CGameContext::Construct(int Resetting)
 	for(int i = 0; i < MAX_CLIENTS; i++)
 		m_apPlayers[i] = 0;
 
+	for(int i = 0; i < MAX_CLIENTS; i++)
+		m_aDeathAnims[i].m_Active = false;
+
 	m_pController = 0;
 	m_VoteCloseTime = 0;
 	m_pVoteOptionFirst = 0;
@@ -183,6 +186,70 @@ void CGameContext::CreateDamageIndForClient(vec2 Pos, float Angle, int Amount, i
 			pEvent->m_X = (int)Pos.x;
 			pEvent->m_Y = (int)Pos.y;
 			pEvent->m_Angle = (int)(Angle * 256.0f);
+		}
+	}
+}
+
+// SAH: same sparks, but visible to an arbitrary set of clients (death melt ring)
+void CGameContext::CreateDamageIndMasked(vec2 Pos, float Angle, int Amount, QuadroMask Mask)
+{
+	for(int i = 0; i < Amount; ++i)
+	{
+		CNetEvent_DamageInd *pEvent = (CNetEvent_DamageInd *)m_Events.Create(NETEVENTTYPE_DAMAGEIND, sizeof(CNetEvent_DamageInd), Mask);
+		if(pEvent)
+		{
+			pEvent->m_X = (int)Pos.x;
+			pEvent->m_Y = (int)Pos.y;
+			pEvent->m_Angle = (int)(Angle * 256.0f);
+		}
+	}
+}
+
+// SAH: start the spike-death melt ring at a fixed position (the tee is gone,
+// the server keeps drawing the ring while particles vanish one by one)
+void CGameContext::CreateSahDeathAnim(vec2 Pos, int ClientID)
+{
+	if(ClientID < 0 || ClientID >= MAX_CLIENTS)
+		return;
+	m_aDeathAnims[ClientID].m_Active = true;
+	m_aDeathAnims[ClientID].m_Pos = Pos;
+	m_aDeathAnims[ClientID].m_StartTick = Server()->Tick();
+}
+
+// SAH: the melt ring — full ring of 12 particles that vanish ONE BY ONE
+// (first particle disappears first, exactly like the sketch), no explosion,
+// no sound. Drawn to everyone like blood would be.
+void CGameContext::TickDeathAnims()
+{
+	const int DurationTicks = (int)(0.7f * Server()->TickSpeed());
+	const int MaxParticles = 12;
+	const float Radius = 44.0f;
+
+	for(int c = 0; c < MAX_CLIENTS; ++c)
+	{
+		if(!m_aDeathAnims[c].m_Active)
+			continue;
+
+		int Elapsed = Server()->Tick() - m_aDeathAnims[c].m_StartTick;
+		if(Elapsed > DurationTicks)
+		{
+			m_aDeathAnims[c].m_Active = false;
+			continue;
+		}
+		if(Elapsed % 2 != 0)
+			continue;
+
+		// particles disappear one by one: 12 → 0 across the animation
+		int Num = MaxParticles - (MaxParticles * Elapsed) / DurationTicks;
+		if(Num < 0)
+			Num = 0;
+
+		for(int i = 0; i < Num; ++i)
+		{
+			float a = 3.14159f * 2.0f * (float)i / (float)MaxParticles;
+			vec2 Pos = m_aDeathAnims[c].m_Pos + vec2(cos(a), sin(a)) * Radius;
+			// spark flies OUTWARD from the ring
+			CreateDamageIndMasked(Pos, a, 1, QuadroMask(-1ll));
 		}
 	}
 }
@@ -566,6 +633,9 @@ void CGameContext::SwapTeams()
 
 void CGameContext::OnTick()
 {
+	// SAH: spike-death melt rings (particles vanish one by one)
+	TickDeathAnims();
+
 	// check tuning
 	CheckPureTuning();
 

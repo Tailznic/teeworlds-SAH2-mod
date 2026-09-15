@@ -215,6 +215,15 @@ public:
 	CEventHandler m_Events;
 	CPlayer *m_apPlayers[MAX_CLIENTS];
 
+	// SAH: spike-death melting ring animation state (per victim, position is static)
+	struct CDeathAnim
+	{
+		bool m_Active;
+		vec2 m_Pos;
+		int m_StartTick;
+	};
+	CDeathAnim m_aDeathAnims[MAX_CLIENTS];
+
 	IGameController *m_pController;
 	CGameWorld m_World;
 
@@ -255,6 +264,9 @@ public:
 	
 	void CreateDamageInd(vec2 Pos, float AngleMod, int Amount, int Team, int FromPlayerID = -1);
 	void CreateDamageIndForClient(vec2 Pos, float Angle, int Amount, int ClientID);
+	void CreateDamageIndMasked(vec2 Pos, float Angle, int Amount, QuadroMask Mask);
+	void CreateSahDeathAnim(vec2 Pos, int ClientID);
+	void TickDeathAnims();
 	void CreateSoundTeam(vec2 Pos, int Sound, int TeamID, int FromPlayerID = -1);
 
 	void CreateExplosion(vec2 Pos, int Owner, int Weapon, bool NoDamage, QuadroMask Mask=QuadroMask(-1ll));

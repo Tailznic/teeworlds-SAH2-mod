@@ -179,10 +179,16 @@ void CCharacter::HandleFreeze()
 		// (masked server-side; our client renders it without playing a sample)
 		if(m_FreezeOwnerID >= 0)
 			GameServer()->CreateSahFreezeMarker(m_Pos, m_FreezeOwnerID);
-		// SAH: white snow-puff marker around the frozen tee, visible ONLY to the freezer —
-		// rendered by ANY client (incl. vanilla DDNet/Rushie) via silent NETEVENTTYPE_EXPLOSION
+		// SAH: FreezingFlakes-style marker around the frozen tee, visible ONLY to the
+		// freezer — a ring of 12 DAMAGEIND sparks (silent, no explosion particles)
 		if(m_FreezeOwnerID >= 0 && g_Config.m_SvSahFreezeMarkerSpawn)
-			GameServer()->CreateExplosion(m_Pos, m_pPlayer->GetCID(), WEAPON_WORLD, true, CmaskOne(m_FreezeOwnerID));
+		{
+			for(int i = 0; i < 12; ++i)
+			{
+				float a = 3.14159f * 2.0f * (float)i / 12.0f;
+				GameServer()->CreateDamageIndForClient(m_Pos + vec2(cos(a), sin(a)) * 48.0f, a, 1, m_FreezeOwnerID);
+			}
+		}
 		// SAH: tick sound (like a clock) for the frozen player
 		if(SecondsLeft > 0)
 			GameServer()->CreateSound(m_Pos, SOUND_PICKUP_HEALTH, CmaskOne(m_pPlayer->GetCID()));
@@ -757,34 +763,29 @@ void CCharacter::Tick()
 		m_Core.m_HookFireDelay = g_Config.m_SvSahHookFireDelay * Server()->TickSpeed() / 1000; // configurable re-hook cooldown (like the fng freeze laser)
 	m_HookPrevState = m_Core.m_HookState;
 
-	// SAH: re-hook cooldown loading ring (drawn "in reverse") — a shrinking ring of
-	// spark particles around the tee. Appears right after a missed hook shot, follows
-	// the player, shrinks as the cooldown progresses (full ring = nearly recharged).
-	// Visible ONLY to the owner, absolutely silent (DAMAGEIND sparks, no samples).
+	// SAH: re-hook cooldown loading ring — a full ring of 12 DAMAGEIND sparks around
+	// the tee (constant radius, follows the player). Appears right after a missed
+	// hook shot; particles vanish ONE BY ONE as the cooldown progresses (full ring
+	// = just missed, zero particles = hook ready). Visible ONLY to the owner, silent.
 	if(GameServer()->m_pController->UsesSahScoring() && g_Config.m_SvSahCooldownRing
 		&& m_Core.m_HookFireDelay > 0 && Server()->Tick() % 2 == 0)
 	{
 		int TotalTicks = g_Config.m_SvSahHookFireDelay * Server()->TickSpeed() / 1000;
 		if(TotalTicks > 0)
 		{
-			// progress 0 (just missed) → 1 (about to recharge)
-			float Progress = 1.0f - (float)m_Core.m_HookFireDelay / (float)TotalTicks;
-			if(Progress < 0.0f) Progress = 0.0f;
-			if(Progress > 1.0f) Progress = 1.0f;
+			// particles vanish one by one: 12 at the start of the cooldown → 0 at the end
+			int Num = 12 - (12 * m_Core.m_HookFireDelay) / TotalTicks;
+			if(Num > 12)
+				Num = 12;
+			if(Num < 0)
+				Num = 0;
 
-			// the ring shrinks as the hook recharges: 70 units (just missed) → 16 (ready)
-			float Radius = 70.0f - 54.0f * Progress;
-			// slow rotation so the ring looks alive while it closes in
-			float Spin = (float)(Server()->Tick() % 50) * (3.14159f * 2.0f / 50.0f);
-
-			// 12 spark positions evenly spread around the tee, each spark flying INWARD
-			// (towards the tee center) — the ring is a loading indicator "in reverse"
-			for(int i = 0; i < 12; ++i)
+			for(int i = 0; i < Num; ++i)
 			{
-				float RingAngle = Spin + 3.14159f * 2.0f * (float)i / 12.0f;
-				vec2 RingPos = m_Pos + vec2(cos(RingAngle), sin(RingAngle)) * Radius;
-				float InwardAngle = RingAngle + 3.14159f; // direction from the ring point towards the tee
-				GameServer()->CreateDamageIndForClient(RingPos, InwardAngle, 1, m_pPlayer->GetCID());
+				float a = 3.14159f * 2.0f * (float)i / 12.0f;
+				vec2 RingPos = m_Pos + vec2(cos(a), sin(a)) * 48.0f;
+				// spark flies outward from the ring
+				GameServer()->CreateDamageIndForClient(RingPos, a, 1, m_pPlayer->GetCID());
 			}
 		}
 	}
@@ -1071,11 +1072,10 @@ void CCharacter::DieSpikes(int pPlayerID, int spikes_flag) {
 		Destroy();
 		if(GameServer()->m_pController->UsesSahScoring() && g_Config.m_SvSahDeathStars)
 		{
-			// SAH: magic-star death effect instead of blood — standard NETEVENTTYPE_SPAWN,
-			// rendered by ANY client (incl. vanilla DDNet/Rushie).
-			// NOTE: the real FreezingFlakes snow particles cannot be triggered by a 0.6
-			// server at all — Rushie draws them only from 0.7 extended data (m_FreezeEnd).
-			GameServer()->CreatePlayerSpawn(m_Pos);
+			// SAH: melt-ring death animation — a ring of 12 DAMAGEIND particles around
+			// the death spot that vanish ONE BY ONE (FreezingFlakes-style, no explosion,
+			// no sound). Drawn to everyone, kept alive server-side while particles melt.
+			GameServer()->CreateSahDeathAnim(m_Pos, m_pPlayer->GetCID());
 		}
 		else
 			GameServer()->CreateDeath(m_Pos, m_pPlayer->GetCID());
