@@ -529,9 +529,7 @@ void CCharacter::OnHookedPlayer(CCharacter *pFrom)
 	// The hook is refused entirely: detached AND retracted so it cannot re-attach next tick
 	if(IsFrozen() && m_FreezeOwnerID == pHookPlayer->GetCID())
 	{
-		// SAH: a ghost shot (fired during cooldown) never freezes, so it cannot steal
-		// your own frozen victim — protection has nothing to block, let it just drag
-		if(!pFrom->m_Core.m_HookGhost && g_Config.m_SvSahSelfKillProtect && pHookPlayer->m_Stats.m_SelfKillProtected)
+		if(g_Config.m_SvSahSelfKillProtect && pHookPlayer->m_Stats.m_SelfKillProtected)
 		{
 			// protection does not work when the killer's team has only one player
 			int OwnTeamPlayers = 0;
@@ -557,10 +555,6 @@ void CCharacter::OnHookedPlayer(CCharacter *pFrom)
 		return;
 
 	// enemies are frozen by the hook (replaces the laser in SAH)
-	// a ghost hook (fired during the cooldown) just drags — it never freezes,
-	// which keeps it perfectly in sync with the client prediction (no phantom hooks)
-	if(pFrom->m_Core.m_HookGhost)
-		return;
 	if(IsFrozen())
 		return; // do not refresh the freeze timer, just drag the frozen tee
 	if(m_InvincibleTick != 0)
@@ -671,7 +665,6 @@ void CCharacter::PreTick()
 	// SAH: hooking a protected frozen victim is forbidden entirely — retract
 	// the hook before the core tick would grab him, so he never gets pulled
 	if(GameServer()->m_pController->UsesSahScoring() && g_Config.m_SvSahSelfKillProtect &&
-		!m_Core.m_HookGhost &&
 		m_Core.m_HookState == HOOK_FLYING && m_Core.m_HookedPlayer == -1)
 	{
 		vec2 HookNewPos = m_Core.m_HookPos + m_Core.m_HookDir * GameServer()->m_World.m_Core.m_Tuning.m_HookFireSpeed;
@@ -760,7 +753,7 @@ void CCharacter::Tick()
 	if(m_Core.m_HookState == HOOK_FLYING && m_HookPrevState != HOOK_FLYING)
 		m_HookLatched = false; // a fresh hook shot started
 	if(m_HookPrevState == HOOK_FLYING && m_Core.m_HookState != HOOK_FLYING && m_Core.m_HookState != HOOK_GRABBED && !m_HookLatched
-		&& GameServer()->m_pController->UsesSahScoring() && !m_Core.m_HookGhost)
+		&& GameServer()->m_pController->UsesSahScoring())
 		m_Core.m_HookFireDelay = g_Config.m_SvSahHookFireDelay * Server()->TickSpeed() / 1000; // configurable re-hook cooldown (like the fng freeze laser)
 	m_HookPrevState = m_Core.m_HookState;
 
@@ -1227,6 +1220,19 @@ void CCharacter::Snap(int SnappingClient)
 		pCharacter->m_Tick = m_ReckoningTick;
 		m_SendCore.Write(pCharacter);
 	}
+
+	// SAH: vanilla-client anti-phantom. While the re-hook cooldown is active the
+	// server keeps the hook in HOOK_IDLE, so client-side prediction fires a phantom
+	// hook on every input tick. Sending HOOK_RETRACTED (-1, valid in the 0.6
+	// protocol m_HookState range -1..5) instead keeps the client's predicted core
+	// out of HOOK_IDLE, so it never predicts a hook shot, and HookState <= 0 hides
+	// the rendered hook. When the cooldown expires and a real shot is fired, the
+	// snapshot switches to HOOK_FLYING and prediction resumes in sync.
+	// Only sent to the owner: other clients don't predict this tee's hook.
+	if(GameServer()->m_pController->UsesSahScoring()
+		&& m_Core.m_HookState == HOOK_IDLE && m_Core.m_HookFireDelay > 0
+		&& SnappingClient == ClientID)
+		pCharacter->m_HookState = HOOK_RETRACTED;
 
 	// set emote
 	if (m_EmoteStop < Server()->Tick())

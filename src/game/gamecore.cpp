@@ -73,7 +73,6 @@ void CCharacterCore::Reset()
 	m_HookedPlayer = -1;
 	m_HookBounces = 0;
 	m_HookFireDelay = 0;
-	m_HookGhost = 0;
 	m_Jumped = 0;
 	m_TriggeredEvents = 0;
 	
@@ -146,23 +145,23 @@ void CCharacterCore::Tick(bool UseInput)
 			m_Jumped &= ~1;
 
 		// handle hook
-		if(m_Input.m_Hook && m_HookState == HOOK_IDLE)
+		if(m_Input.m_Hook)
 		{
-			// SAH: every fire from IDLE is ACCEPTED (keeps vanilla client prediction in sync).
-			// A shot fired while the re-fire cooldown is active is a "ghost" shot:
-			// it flies, bounces and drags exactly like a normal hook (so the client
-			// prediction never diverges -> no phantom hooks), but it never freezes.
-			m_HookGhost = m_HookFireDelay > 0;
-			m_HookState = HOOK_FLYING;
-			m_HookPos = m_Pos+TargetDirection*PhysSize*1.5f;
-			m_HookDir = TargetDirection;
-			m_HookedPlayer = -1;
-			m_HookTick = 0;
-			m_HookBounces = max(0, g_Config.m_SvSahHookBounces); // SAH: fresh bounce budget for every hook
-			m_TriggeredEvents |= COREEVENT_HOOK_LAUNCH;
-			++m_CoreStats.m_NumHooks;
+			if(m_HookState == HOOK_IDLE && m_HookFireDelay <= 0)
+			{
+				m_HookState = HOOK_FLYING;
+				m_HookPos = m_Pos+TargetDirection*PhysSize*1.5f;
+				m_HookDir = TargetDirection;
+				m_HookedPlayer = -1;
+				m_HookTick = 0;
+				m_HookBounces = max(0, g_Config.m_SvSahHookBounces); // SAH: fresh bounce budget for every hook
+				m_TriggeredEvents |= COREEVENT_HOOK_LAUNCH;
+				++m_CoreStats.m_NumHooks;
+			}
+			// SAH: while m_HookFireDelay > 0 the hook simply does not fire (re-fire cooldown
+			// after a hook that latched nothing — same value as the fng laser fire delay)
 		}
-		else if(!m_Input.m_Hook)
+		else
 		{
 			m_HookedPlayer = -1;
 			m_HookState = HOOK_IDLE;
