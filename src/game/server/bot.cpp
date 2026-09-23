@@ -58,6 +58,10 @@ void CBotAI::Reset()
 	m_FireState = 0;
 	m_IdleTicks = 0;
 	m_IdleDir = 1;
+	m_AimNoise = vec2(0.0f, 0.0f);
+	m_LastTargetVel = vec2(0.0f, 0.0f);
+	m_Predict = 0.0f;
+	m_NoiseTick = 0;
 }
 
 void CBotAI::Tick(CGameContext *pGS, int ClientID)
@@ -126,6 +130,34 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		else
 			m_TargetCID = -1;
 	}
+
+	// --- fng_trainbot: score how unpredictably the target moves ---
+	// sharp velocity changes (zigzag, jump spam) raise m_Predict, smooth
+	// running lowers it again; the aim error below grows from that score
+	if(pTarget)
+	{
+		vec2 Vel = pTarget->GetVel();
+		float Dv = length(Vel - m_LastTargetVel);
+		m_LastTargetVel = Vel;
+		float Inst = clamp(Dv / 60.0f, 0.0f, 1.0f);
+		m_Predict = clamp(m_Predict * 0.97f + Inst * 0.15f, 0.0f, 1.0f);
+	}
+	else
+	{
+		m_LastTargetVel = vec2(0.0f, 0.0f);
+		m_Predict *= 0.9f;
+	}
+
+	// re-roll the aim error every few ticks; its radius grows quadratically
+	// with the unpredictability — only a hard zigzag really makes the bot miss
+	if(m_NoiseTick <= 0)
+	{
+		float MaxErr = m_Predict * m_Predict * 240.0f;
+		float a = frandom() * 2.0f * pi;
+		m_AimNoise = vec2(cos(a), sin(a)) * (frandom() * MaxErr);
+		m_NoiseTick = 3 + (int)(frandom() * 3.0f);
+	}
+	m_NoiseTick--;
 
 	// --- am I dragging a frozen enemy on my hook? ---
 	CCharacter *pCarried = 0;
@@ -325,6 +357,10 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	if(pAim)
 	{
 		vec2 Aim = pAim->m_Pos + pAim->GetVel() * 0.15f - MyPos;
+		// fng_trainbot: against the enemy the aim carries the zigzag error,
+		// healing and dragging stay precise
+		if(pTarget && pAim == pTarget)
+			Aim += m_AimNoise;
 		if(length(Aim) < 1.0f)
 			Aim = vec2(0.0f, -1.0f);
 		Input.m_TargetX = (int)Aim.x;

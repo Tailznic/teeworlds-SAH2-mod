@@ -363,7 +363,7 @@ public:
 	{
 		for (int i = 0; i < MAX_CLIENTS; ++i) {
 			CPlayer* p = m_apPlayers[i];
-			if (!p) continue;
+			if (!p || p->m_IsBot) continue; // bot slots have no engine connection
 			Server()->SendPackMsg(pMsg, Flags, i);
 		}
 		return 0;

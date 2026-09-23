@@ -869,7 +869,15 @@ void CGameContext::CleanupBotsOnInit()
 
 int CGameContext::CreateBot()
 {
-	for(int Slot = MAX_CLIENTS - 1; Slot >= 0; Slot--)
+	// never sit above sv_max_clients: sends to such slots hit the
+	// netserver range assert — top slot inside the engine's range
+	int Limit = Server()->MaxClients();
+	if(Limit > MAX_CLIENTS)
+		Limit = MAX_CLIENTS;
+	if(Limit < 1)
+		return -1;
+
+	for(int Slot = Limit - 1; Slot >= 0; Slot--)
 	{
 		// highest free slot: the engine hands out the lowest ones to humans
 		if(m_apPlayers[Slot] || m_aIsBot[Slot])

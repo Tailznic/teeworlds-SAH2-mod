@@ -25,6 +25,12 @@ private:
 	int m_FireState;      // persistent input fire counter (must never step backwards)
 	int m_IdleTicks;      // wander timer when there is nobody to fight
 	int m_IdleDir;        // wander direction
+
+	// fng_trainbot: aim error that grows with unpredictable target movement
+	vec2 m_AimNoise;      // current aim offset applied against the enemy
+	vec2 m_LastTargetVel; // target velocity measured last tick
+	float m_Predict;      // 0 = smooth movement (hits), 1 = hard zigzag (misses)
+	int m_NoiseTick;      // ticks until the aim error is re-rolled
 };
 
 #endif
