@@ -80,6 +80,11 @@ public:
 	void SetEmote(int Emote, int Tick);
 
 	bool IsAlive() const { return m_Alive; }
+
+	// SAH: read-only view of the physics core for the practice bot
+	bool IsHookGrabbed() const { return m_Core.m_HookState == HOOK_GRABBED; }
+	int GetHookedPlayerID() const { return m_Core.m_HookedPlayer; }
+	vec2 GetVel() const { return m_Core.m_Vel; }
 	class CPlayer *GetPlayer() { return m_pPlayer; }
 
 	bool IsFrozen();

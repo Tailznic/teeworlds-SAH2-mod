@@ -37,6 +37,12 @@ public:
 	void OnPredictedInput(CNetObj_PlayerInput *NewInput);
 	void OnDisconnect(const char *pReason);
 
+	// SAH: server-side bot slot (no engine client behind it)
+	bool m_IsBot;
+	char m_aBotName[16];
+	void SetBot(const char *pName);
+	const char *GetShownName();
+
 	void KillCharacter(int Weapon, bool forced = false);
 	CCharacter *GetCharacter();
 

@@ -42,6 +42,13 @@ void CGameContext::Construct(int Resetting)
 	for(int i = 0; i < MAX_CLIENTS; i++)
 		m_aDeathAnims[i].m_Active = false;
 
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		m_aIsBot[i] = false;
+		m_aBotAI[i].Reset();
+	}
+	m_NumBotSpikes = 0;
+
 	m_pController = 0;
 	m_VoteCloseTime = 0;
 	m_pVoteOptionFirst = 0;
@@ -636,6 +643,9 @@ void CGameContext::OnTick()
 	// SAH: spike-death melt rings (particles vanish one by one)
 	TickDeathAnims();
 
+	// SAH: feed bot inputs before the world ticks so they apply this tick
+	TickBots();
+
 	// check tuning
 	CheckPureTuning();
 
@@ -779,6 +789,12 @@ void CGameContext::OnClientEnter(int ClientID)
 
 void CGameContext::OnClientConnected(int ClientID, int PreferedTeam)
 {
+	// a real client was given a slot held by a bot (server nearly full:
+	// the engine hands out the lowest free slots, bots sit on the highest
+	// ones) — free the bot slot and let the human have it
+	if(ClientID >= 0 && ClientID < MAX_CLIENTS && m_aIsBot[ClientID])
+		RemoveBot(ClientID, false);
+
 	// Check which team the player should be on
 	int StartTeam = m_pController->ClampTeam(PreferedTeam);
 	if(PreferedTeam == -2)
@@ -829,6 +845,137 @@ bool CGameContext::OnClientDrop(int ClientID, const char *pReason, bool Force)
 			m_apPlayers[i]->m_SpectatorID = SPEC_FREEVIEW;
 	}
 	return true;
+}
+
+// --- SAH: server-side practice bot ---------------------------------------
+
+void CGameContext::CleanupBotsOnInit()
+{
+	// bots are not engine clients, they survive a same-context re-init:
+	// free any stale bot player before the new map takes over
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(!m_aIsBot[i])
+			continue;
+		m_aIsBot[i] = false;
+		if(m_apPlayers[i])
+		{
+			m_apPlayers[i]->OnDisconnect("");
+			delete m_apPlayers[i];
+			m_apPlayers[i] = 0;
+		}
+	}
+}
+
+int CGameContext::CreateBot()
+{
+	for(int Slot = MAX_CLIENTS - 1; Slot >= 0; Slot--)
+	{
+		// highest free slot: the engine hands out the lowest ones to humans
+		if(m_apPlayers[Slot] || m_aIsBot[Slot])
+			continue;
+
+		int StartTeam = m_pController->GetAutoTeam(Slot);
+		if(StartTeam < TEAM_RED || StartTeam > TEAM_BLUE)
+			StartTeam = TEAM_RED;
+
+		m_apPlayers[Slot] = new(Slot) CPlayer(this, Slot, StartTeam);
+		(void)m_pController->CheckTeamBalance();
+
+		m_aIsBot[Slot] = true;
+		m_aBotAI[Slot].Reset();
+		m_apPlayers[Slot]->SetBot(m_Config->m_SvBotName);
+		m_apPlayers[Slot]->Respawn();
+
+		char aBuf[256];
+		str_format(aBuf, sizeof(aBuf), "'%s' entered and joined the %s",
+			m_apPlayers[Slot]->GetShownName(),
+			m_pController->GetTeamName(m_apPlayers[Slot]->GetTeam()));
+		SendChat(-1, CGameContext::CHAT_ALL, aBuf);
+
+		str_format(aBuf, sizeof(aBuf), "bot joined cid=%d team=%d", Slot, m_apPlayers[Slot]->GetTeam());
+		Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
+		return Slot;
+	}
+	return -1;
+}
+
+void CGameContext::RemoveBot(int ClientID, bool Announce)
+{
+	if(ClientID < 0 || ClientID >= MAX_CLIENTS || !m_aIsBot[ClientID])
+		return;
+	m_aIsBot[ClientID] = false;
+
+	CPlayer *pPlayer = m_apPlayers[ClientID];
+	if(pPlayer)
+	{
+		if(Announce)
+		{
+			char aBuf[256];
+			str_format(aBuf, sizeof(aBuf), "'%s' has left the game", pPlayer->GetShownName());
+			SendChat(-1, CGameContext::CHAT_ALL, aBuf);
+		}
+		// OnDisconnect kills the character (proper world removal),
+		// engine-side chat is skipped because the slot is not ingame
+		pPlayer->OnDisconnect("");
+		delete pPlayer;
+		m_apPlayers[ClientID] = 0;
+	}
+
+	if(m_pController)
+		(void)m_pController->CheckTeamBalance();
+}
+
+void CGameContext::CreateConfiguredBots()
+{
+	int Want = clamp((int)m_Config->m_SvBotCount, 0, 4);
+	int Have = 0;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+		if(m_aIsBot[i])
+			Have++;
+	while(Have < Want)
+	{
+		if(CreateBot() < 0)
+			break;
+		Have++;
+	}
+}
+
+void CGameContext::TickBots()
+{
+	if(m_World.m_Paused)
+		return;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+		if(m_aIsBot[i] && m_apPlayers[i])
+			m_aBotAI[i].Tick(this, i);
+}
+
+// spike tiles (all colours) precomputed once per map so bots know
+// where to drag their frozen catches
+void CGameContext::CollectBotSpikes()
+{
+	static const int SpikeMask =
+		CCollision::COLFLAG_SPIKE_NORMAL | CCollision::COLFLAG_SPIKE_RED |
+		CCollision::COLFLAG_SPIKE_BLUE | CCollision::COLFLAG_SPIKE_GOLD |
+		CCollision::COLFLAG_SPIKE_GREEN | CCollision::COLFLAG_SPIKE_PURPLE;
+
+	m_NumBotSpikes = 0;
+	CCollision *pCol = Collision();
+	for(int y = 0; y < pCol->GetHeight(); y++)
+	{
+		for(int x = 0; x < pCol->GetWidth(); x++)
+		{
+			vec2 Pos((float)x * 32.0f + 16.0f, (float)y * 32.0f + 16.0f);
+			int Flags = pCol->GetCollisionAt(Pos.x, Pos.y) & SpikeMask;
+			if(!Flags)
+				continue;
+			if(m_NumBotSpikes >= MAX_BOT_SPIKES)
+				return;
+			m_aBotSpikes[m_NumBotSpikes].m_Pos = Pos;
+			m_aBotSpikes[m_NumBotSpikes].m_Flags = Flags;
+			m_NumBotSpikes++;
+		}
+	}
 }
 
 void CGameContext::OnMessage(int MsgID, CUnpacker *pUnpacker, int ClientID)
@@ -2026,6 +2173,9 @@ void CGameContext::OnConsoleInit()
 
 void CGameContext::OnInit(/*class IKernel *pKernel*/)
 {
+	// SAH: free stale bot players if this context is re-initialized in place
+	CleanupBotsOnInit();
+
 	m_pServer = Kernel()->RequestInterface<IServer>();
 	m_pConsole = Kernel()->RequestInterface<IConsole>();
 	m_World.SetGameServer(this);
@@ -2094,6 +2244,10 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 
 	//game.world.insert_entity(game.Controller);
 
+	// SAH: spike navigation targets + practice bots for this map
+	CollectBotSpikes();
+	CreateConfiguredBots();
+
 #ifdef CONF_DEBUG
 	if(m_Config->m_DbgDummies)
 	{
@@ -2108,6 +2262,9 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 
 void CGameContext::OnInit(IKernel *pKernel, IMap* pMap, CConfiguration* pConfigFile)
 {
+	// SAH: free stale bot players if this context is re-initialized in place
+	CleanupBotsOnInit();
+
 	IKernel *kernel = NULL;
 	if(pKernel != NULL) kernel = pKernel;
 	else kernel = Kernel();
@@ -2192,6 +2349,10 @@ void CGameContext::OnInit(IKernel *pKernel, IMap* pMap, CConfiguration* pConfigF
 		}
 	}
 
+	// SAH: spike navigation targets + practice bots for this map
+	CollectBotSpikes();
+	CreateConfiguredBots();
+
 #ifdef CONF_DEBUG
 	if(m_Config->m_DbgDummies)
 	{
@@ -2205,6 +2366,11 @@ void CGameContext::OnInit(IKernel *pKernel, IMap* pMap, CConfiguration* pConfigF
 
 void CGameContext::OnShutdown()
 {
+	// SAH: bots are not engine clients — free them explicitly before reset
+	for(int i = 0; i < MAX_CLIENTS; i++)
+		if(m_aIsBot[i])
+			RemoveBot(i, false);
+
 	delete m_pController;
 	m_pController = 0;
 	Clear();

@@ -14,6 +14,7 @@
 #include "gamecontroller.h"
 #include "gameworld.h"
 #include "player.h"
+#include "bot.h"
 
 #include <string>
 
@@ -214,6 +215,26 @@ public:
 
 	CEventHandler m_Events;
 	CPlayer *m_apPlayers[MAX_CLIENTS];
+
+	// SAH: server-side practice bot (slot without a network client)
+	bool m_aIsBot[MAX_CLIENTS];
+	class CBotAI m_aBotAI[MAX_CLIENTS];
+	int CreateBot();
+	void RemoveBot(int ClientID, bool Announce);
+	void CreateConfiguredBots();
+	void CleanupBotsOnInit();
+	void TickBots();
+
+	// SAH: precomputed spike tiles for bot throw navigation
+	enum { MAX_BOT_SPIKES = 2048 };
+	struct CBotSpike
+	{
+		vec2 m_Pos;
+		int m_Flags;
+	};
+	CBotSpike m_aBotSpikes[MAX_BOT_SPIKES];
+	int m_NumBotSpikes;
+	void CollectBotSpikes();
 
 	// SAH: spike-death melting ring animation state (per victim, position is static)
 	struct CDeathAnim

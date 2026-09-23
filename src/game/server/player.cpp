@@ -33,6 +33,9 @@ CPlayer::CPlayer(CGameContext *pGameServer, int ClientID, int Team)
 	m_Emotion = EMOTE_NORMAL;
 	m_EmotionDuration = 0;
 
+	m_IsBot = false;
+	m_aBotName[0] = 0;
+
 	m_ClientVersion = eClientVersion::CLIENT_VERSION_NORMAL;
 	
 	m_UnknownPlayerFlag = 0;
@@ -56,7 +59,8 @@ void CPlayer::Tick()
 #ifdef CONF_DEBUG
 	if (!g_Config.m_DbgDummies || m_ClientID < MAX_CLIENTS - g_Config.m_DbgDummies)
 #endif
-	if(!Server()->ClientIngame(m_ClientID))
+	// SAH: bot slots have no engine client, they still must tick
+	if(!m_IsBot && !Server()->ClientIngame(m_ClientID))
 		return;
 
 	/*for (int i = 0; i < DDNET_CLIENT_MAX_CLIENTS; ++i) {
@@ -73,6 +77,12 @@ void CPlayer::Tick()
 	Server()->SetClientScore(m_ClientID, m_Score);
 
 	// do latency stuff
+	if(m_IsBot)
+	{
+		// bot slot has no network client — show a clean zero ping
+		m_Latency.m_Min = m_Latency.m_Max = m_Latency.m_Avg = 0;
+	}
+	else
 	{
 		IServer::CClientInfo Info;
 		if(Server()->GetClientInfo(m_ClientID, &Info))
@@ -151,7 +161,8 @@ void CPlayer::Snap(int SnappingClient)
 #ifdef CONF_DEBUG
 	if(!g_Config.m_DbgDummies || m_ClientID < MAX_CLIENTS-g_Config.m_DbgDummies)
 #endif
-	if(!Server()->ClientIngame(m_ClientID))
+	// SAH: bot slots still snap to other players
+	if(!m_IsBot && !Server()->ClientIngame(m_ClientID))
 		return;
 	
 	int ClientID = m_ClientID;
@@ -161,7 +172,7 @@ void CPlayer::Snap(int SnappingClient)
 	if(!pClientInfo)
 		return;
 
-	StrToInts(&pClientInfo->m_Name0, 4, Server()->ClientName(m_ClientID));
+	StrToInts(&pClientInfo->m_Name0, 4, GetShownName());
 	StrToInts(&pClientInfo->m_Clan0, 3, Server()->ClientClan(m_ClientID));
 	pClientInfo->m_Country = Server()->ClientCountry(m_ClientID);
 	if(GameServer()->m_pController->UseFakeTeams() && m_pCharacter && m_pCharacter->IsFrozen()){
@@ -203,6 +214,18 @@ void CPlayer::Snap(int SnappingClient)
 		pSpectatorInfo->m_X = m_ViewPos.x;
 		pSpectatorInfo->m_Y = m_ViewPos.y;
 	}
+}
+
+void CPlayer::SetBot(const char *pName)
+{
+	m_IsBot = true;
+	str_copy(m_aBotName, (pName && pName[0]) ? pName : "Bot", sizeof(m_aBotName));
+	m_IsReady = true;
+}
+
+const char *CPlayer::GetShownName()
+{
+	return m_IsBot ? m_aBotName : Server()->ClientName(m_ClientID);
 }
 
 void CPlayer::OnDisconnect(const char *pReason)
@@ -314,7 +337,7 @@ void CPlayer::SetTeam(int Team, bool DoChatMsg)
 	char aBuf[512];
 	if(DoChatMsg)
 	{
-		str_format(aBuf, sizeof(aBuf), "'%s' joined the %s", Server()->ClientName(m_ClientID), GameServer()->m_pController->GetTeamName(Team));
+		str_format(aBuf, sizeof(aBuf), "'%s' joined the %s", GetShownName(), GameServer()->m_pController->GetTeamName(Team));
 		GameServer()->SendChat(-1, CGameContext::CHAT_ALL, aBuf);
 	}
 

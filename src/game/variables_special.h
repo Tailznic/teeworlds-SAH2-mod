@@ -60,3 +60,6 @@ MACRO_CONFIG_INT(SvSahDeathStars, sv_sah_death_stars, 1, 0, 1, CFGFLAG_SERVER, "
 MACRO_CONFIG_INT(SvSahFreezeMarkerSpawn, sv_sah_freeze_marker_spawn, 1, 0, 1, CFGFLAG_SERVER, "SAH: белый снежный маркер у замороженного, видит только фризер (1=вкл, беззвучный; 0=выкл)")
 MACRO_CONFIG_INT(SvSahHookFireDelay, sv_sah_hook_fire_delay, 800, 0, 3000, CFGFLAG_SERVER, "SAH: кулдаун пере-хука после промаха в мс (0 = без кулдауна)")
 MACRO_CONFIG_INT(SvSahCooldownRing, sv_sah_cooldown_ring, 1, 0, 1, CFGFLAG_SERVER, "SAH: кольцо-загрузка вокруг игрока при кулдауне хука (сжимается по мере перезарядки, видит только владелец)")
+// SAH: server-side practice bot
+MACRO_CONFIG_INT(SvBotCount, sv_bot_count, 1, 0, 4, CFGFLAG_SERVER, "SAH: сколько ботов добавлять при старте (слоты с конца; 0 = выкл)")
+MACRO_CONFIG_STR(SvBotName, sv_bot_name, 16, "Bot", CFGFLAG_SERVER, "SAH: имя бота")
