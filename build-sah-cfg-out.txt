@@ -1,0 +1,20 @@
+CMake Warning (dev) at CMakeLists.txt:101 (find_package):
+  Policy CMP0148 is not set: The FindPythonInterp and FindPythonLibs modules
+  are removed.  Run "cmake --help-policy CMP0148" for policy details.  Use
+  the cmake_policy command to set the policy and suppress this warning.
+
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+-- Could NOT find GTest (missing: GTEST_LIBRARY GTEST_INCLUDE_DIR GTEST_MAIN_LIBRARY) 
+-- ******** Teeworlds ********
+-- Target OS: windows 64bit
+-- Compiler: C:/msys64/mingw64/bin/c++.exe
+-- Build type: Release
+-- Dependencies:
+--  * OpenSSL Crypto not found
+--  * PythonInterp found
+--  * Zlib not found (using bundled version)
+-- To run the tests, you have to install GTest
+-- Configuring done (8.9s)
+-- Generating done (0.7s)
+-- Build files have been written to: C:/Users/tailznic/Downloads/SNH/build-sah
