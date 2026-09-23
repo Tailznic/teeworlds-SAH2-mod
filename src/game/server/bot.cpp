@@ -1,5 +1,5 @@
-/* SAH: server-side practice bot — feeds CNetObj_PlayerInput for a slot
-   that has no network client behind it (see CGameContext::CreateBot). */
+/* fng_trainbot: server-side practice bot — feeds CNetObj_PlayerInput for a
+   slot that has no network client behind it (see CGameContext::CreateBot). */
 #include <base/math.h>
 #include <base/vmath.h>
 #include <game/collision.h>
@@ -28,6 +28,24 @@ static bool BotValidSpikeForTeam(int Flags, int Team)
 	return true;
 }
 
+// distance penalty per spike colour: people farm the frequent team/normal
+// tiles; gold/purple are never worth dragging the prey across the whole map
+static float BotSpikePenalty(int Flags)
+{
+	int S = Flags & (BOT_DANGER_MASK & ~CCollision::COLFLAG_DEATH);
+	if(S & (CCollision::COLFLAG_SPIKE_RED | CCollision::COLFLAG_SPIKE_BLUE))
+		return 0.0f;   // team tiles: the bread and butter
+	if(S & CCollision::COLFLAG_SPIKE_NORMAL)
+		return 250.0f;
+	if(S & CCollision::COLFLAG_SPIKE_GREEN)
+		return 700.0f;
+	if(S & CCollision::COLFLAG_SPIKE_PURPLE)
+		return 1100.0f; // +10 player points, but only if close
+	if(S & CCollision::COLFLAG_SPIKE_GOLD)
+		return 1500.0f; // least priority
+	return 1000.0f;
+}
+
 static bool BotIsEnemy(CPlayer *pA, CPlayer *pB)
 {
 	if(!pA || !pB || pA == pB)
@@ -42,6 +60,70 @@ static bool BotIsEnemy(CPlayer *pA, CPlayer *pB)
 static bool BotLineOfSight(CGameContext *pGS, vec2 a, vec2 b)
 {
 	return pGS->Collision()->IntersectLine(a, b, 0, 0) == 0;
+}
+
+// solid tile the hook can actually latch onto (unhookable tiles bounce it)
+static bool BotHookablePoint(CGameContext *pGS, vec2 p)
+{
+	int f = pGS->Collision()->GetCollisionAt(p.x, p.y);
+	return (f & CCollision::COLFLAG_SOLID) && !(f & CCollision::COLFLAG_NOHOOK);
+}
+
+// walking one step further would drop us over an edge with kill tiles in the
+// shaft below — the mid-map "stupid fall" deaths happen exactly like this
+static bool BotDeadlyDrop(CGameContext *pGS, vec2 MyPos, int Dir)
+{
+	CCollision *pCol = pGS->Collision();
+	float x = MyPos.x + Dir * 52.0f;
+	if(pCol->GetCollisionAt(x, MyPos.y + 30.0f) & CCollision::COLFLAG_SOLID)
+		return false; // ground continues under the next step
+	for(int dy = 48; dy <= 340; dy += 28)
+	{
+		if(pCol->GetCollisionAt(x, MyPos.y + (float)dy) & BOT_DANGER_MASK)
+			return true;
+	}
+	return false;
+}
+
+// hook anchor somewhere above us to pull the tee up to the higher platforms
+static bool BotFindClimbAnchor(CGameContext *pGS, vec2 From, vec2 Want, vec2 *pOut)
+{
+	static const float ady[] = {-360.0f, -500.0f, -240.0f, -640.0f};
+	static const float adx[] = {0.0f, -70.0f, 70.0f, -35.0f, 35.0f};
+	for(int j = 0; j < 4; j++)
+	{
+		for(int i = 0; i < 5; i++)
+		{
+			vec2 Cand = vec2(From.x + adx[i], From.y + ady[j]);
+			if(length(Cand - From) > 700.0f)
+				continue;
+			if(!BotHookablePoint(pGS, Cand))
+				continue;
+			if(!BotLineOfSight(pGS, From, Cand))
+				continue;
+			*pOut = Cand;
+			return true;
+		}
+	}
+	return false;
+}
+
+// ground/wall point ahead and below — hooking it and running yanks the tee
+// forward, the same acceleration burst people use to reach points first
+static bool BotFindBoostAnchor(CGameContext *pGS, vec2 From, int Dir, vec2 *pOut)
+{
+	vec2 To = From + vec2((float)Dir * 380.0f, 170.0f);
+	vec2 Hit = To;
+	pGS->Collision()->IntersectLine(From, To, &Hit, 0);
+	if(!BotHookablePoint(pGS, Hit))
+		return false;
+	int f = pGS->Collision()->GetCollisionAt(Hit.x, Hit.y);
+	if(f & BOT_DANGER_MASK)
+		return false;
+	if(length(Hit - From) < 80.0f)
+		return false;
+	*pOut = Hit;
+	return true;
 }
 
 void CBotAI::Reset()
@@ -62,6 +144,18 @@ void CBotAI::Reset()
 	m_LastTargetVel = vec2(0.0f, 0.0f);
 	m_Predict = 0.0f;
 	m_NoiseTick = 0;
+	m_StrafeDir = 1;
+	m_StrafeTicks = 0;
+	m_PumpTicks = 0;
+	m_CarryTicks = 0;
+	m_ClimbTicks = 0;
+	m_ClimbDir = 0;
+	m_ClimbAnchorTick = 0;
+	m_ClimbAnchor = vec2(0.0f, 0.0f);
+	m_BoostTicks = 0;
+	m_BoostCooldown = 0;
+	m_BoostDir = 1;
+	m_BoostAnchor = vec2(0.0f, 0.0f);
 }
 
 void CBotAI::Tick(CGameContext *pGS, int ClientID)
@@ -132,8 +226,6 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	}
 
 	// --- fng_trainbot: score how unpredictably the target moves ---
-	// sharp velocity changes (zigzag, jump spam) raise m_Predict, smooth
-	// running lowers it again; the aim error below grows from that score
 	if(pTarget)
 	{
 		vec2 Vel = pTarget->GetVel();
@@ -148,14 +240,16 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		m_Predict *= 0.9f;
 	}
 
-	// re-roll the aim error every few ticks; its radius grows quadratically
-	// with the unpredictability — only a hard zigzag really makes the bot miss
+	// fng_trainbot: deviations from the ideal shot are re-rolled every 1-2
+	// ticks with a base error even against a still target — the bot does NOT
+	// model laser bounces off walls (people are the worst at those anyway),
+	// it just misses more often; zigzag movement widens the error further
 	if(m_NoiseTick <= 0)
 	{
-		float MaxErr = m_Predict * m_Predict * 240.0f;
+		float MaxErr = 65.0f + m_Predict * m_Predict * 270.0f;
 		float a = frandom() * 2.0f * pi;
-		m_AimNoise = vec2(cos(a), sin(a)) * (frandom() * MaxErr);
-		m_NoiseTick = 3 + (int)(frandom() * 3.0f);
+		m_AimNoise = vec2(cos(a), sin(a)) * (0.35f + 0.65f * frandom()) * MaxErr;
+		m_NoiseTick = 1 + (frandom() < 0.35f ? 1 : 0);
 	}
 	m_NoiseTick--;
 
@@ -175,10 +269,21 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			}
 		}
 	}
-	if(!pCarried)
+	if(pCarried)
+	{
+		if(m_CarryTicks < 100000)
+			m_CarryTicks++;
+	}
+	else
+	{
+		m_CarryTicks = 0;
+		m_PumpTicks = 0;
 		m_SpikeIdx = -1; // nothing to throw right now
+	}
 
-	// --- spike goal for the throw (own/neutral spikes only) ---
+	// --- spike goal: closest effective kill tiles, weighted by colour ---
+	//     priority: team > normal > green > purple > gold — never drag the
+	//     prey across the whole map just for the fancy tiles
 	if(pCarried && m_SpikeIdx < 0)
 	{
 		float Best = 0.0f;
@@ -187,9 +292,12 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			if(!BotValidSpikeForTeam(pGS->m_aBotSpikes[i].m_Flags, MyTeam))
 				continue;
 			float d = distance(pCarried->m_Pos, pGS->m_aBotSpikes[i].m_Pos);
-			if(m_SpikeIdx < 0 || d < Best)
+			if(d > 2000.0f)
+				continue;
+			float Score = d + BotSpikePenalty(pGS->m_aBotSpikes[i].m_Flags);
+			if(m_SpikeIdx < 0 || Score < Best)
 			{
-				Best = d;
+				Best = Score;
 				m_SpikeIdx = i;
 			}
 		}
@@ -198,62 +306,120 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	bool HaveSpike = pCarried && m_SpikeIdx >= 0;
 	vec2 SpikePos = HaveSpike ? pGS->m_aBotSpikes[m_SpikeIdx].m_Pos : MyPos;
 
-	// --- release (throw) timing: let the enemy slide into the spikes ---
-	bool WantRelease = false;
-	if(HaveSpike)
+	// --- vertical states: hook-climb up, hook-boost forward ---
+	bool Climbing = m_ClimbTicks > 0;
+	bool Boosting = m_BoostTicks > 0;
+	bool WantClimb = false;
+
+	if(Climbing)
 	{
-		float dMe = distance(MyPos, SpikePos);
-		vec2 ToSpike = SpikePos - pCarried->m_Pos;
-		float dEnemy = length(ToSpike);
-		float VelToward = 0.0f;
-		if(dEnemy > 1.0f)
-			VelToward = dot(pCarried->GetVel(), normalize(ToSpike));
-		if(dEnemy < 380.0f && VelToward > 120.0f && dMe < 450.0f)
-			WantRelease = true; // already flying towards the spikes
-		else if(dMe < 170.0f)
-			WantRelease = true; // too close to keep dragging safely
+		m_ClimbTicks--;
+		if(!pTarget || m_ClimbTicks <= 0 ||
+			pTarget->m_Pos.y - MyPos.y > -60.0f ||
+			!BotHookablePoint(pGS, m_ClimbAnchor))
+		{
+			m_ClimbTicks = 0;
+			Climbing = false;
+		}
 	}
-	if(WantRelease)
+	if(!pCarried && m_BackoffTicks <= 0 && pTarget && !Boosting)
 	{
-		// step back from the spikes while the hook retracts
-		float Away = MyPos.x - SpikePos.x;
-		if(Away > 4.0f) m_BackoffDir = -1;
-		else if(Away < -4.0f) m_BackoffDir = 1;
-		else m_BackoffDir = m_IdleDir;
-		m_BackoffTicks = 40;
-		m_SpikeIdx = -1;
-		HaveSpike = false;
+		float dy = pTarget->m_Pos.y - MyPos.y;
+		float hd = fabsf(pTarget->m_Pos.x - MyPos.x);
+		if(dy < -140.0f && hd < 700.0f)
+			WantClimb = true;
+	}
+	if(WantClimb && !Climbing && Tick >= m_ClimbAnchorTick)
+	{
+		m_ClimbAnchorTick = Tick + 8;
+		vec2 A;
+		if(BotFindClimbAnchor(pGS, MyPos, pTarget->m_Pos, &A))
+		{
+			m_ClimbAnchor = A;
+			m_ClimbTicks = 70;
+			float dxa = pTarget->m_Pos.x - MyPos.x;
+			m_ClimbDir = dxa > 40.0f ? 1 : (dxa < -40.0f ? -1 : 0);
+			Climbing = true;
+		}
 	}
 
-	bool Backing = m_BackoffTicks > 0;
+	if(Boosting)
+	{
+		m_BoostTicks--;
+		if(m_BoostTicks <= 0 || !BotHookablePoint(pGS, m_BoostAnchor))
+		{
+			m_BoostTicks = 0;
+			Boosting = false;
+		}
+	}
+	if(m_BoostCooldown > 0)
+		m_BoostCooldown--;
+	if(!pCarried && !Climbing && !Boosting && m_BackoffTicks <= 0 &&
+		m_BoostCooldown <= 0 && pTarget)
+	{
+		float d = distance(MyPos, pTarget->m_Pos);
+		float ddx = pTarget->m_Pos.x - MyPos.x;
+		int sdir = ddx > 12.0f ? 1 : (ddx < -12.0f ? -1 : 0);
+		if(d > 650.0f && sdir != 0 && pMe->IsGrounded())
+		{
+			vec2 A;
+			if(BotFindBoostAnchor(pGS, MyPos, sdir, &A))
+			{
+				m_BoostAnchor = A;
+				m_BoostTicks = 14;
+				m_BoostCooldown = 110;
+				m_BoostDir = sdir;
+				Boosting = true;
+			}
+		}
+	}
 
-	// --- movement ---
+	// --- movement: take position, never just stand there ---
 	int Dir = 0;
-	if(Backing)
+	if(m_BackoffTicks > 0)
 	{
 		m_BackoffTicks--;
 		Dir = m_BackoffDir;
 	}
-	else if(HaveSpike)
+	else if(pCarried && m_PumpTicks > 0)
 	{
-		float dx = SpikePos.x - MyPos.x;
-		Dir = fabsf(dx) > 8.0f ? (dx > 0.0f ? 1 : -1) : 0;
+		// pump phase of the throw: keep the hook, drag the prey back off
+		// the spikes, then charge again — builds momentum for the release
+		m_PumpTicks--;
+		float Away = SpikePos.x - MyPos.x;
+		Dir = Away > 4.0f ? -1 : (Away < -4.0f ? 1 : m_IdleDir);
 	}
 	else if(pCarried)
 	{
-		// carrying but no spike known: stay right above the prey
-		float dx = pCarried->m_Pos.x - MyPos.x;
-		Dir = fabsf(dx) > 40.0f ? (dx > 0.0f ? 1 : -1) : 0;
+		// close in on the goal (or stay over the prey if no spike found)
+		float dx = (HaveSpike ? SpikePos.x : pCarried->m_Pos.x) - MyPos.x;
+		Dir = fabsf(dx) > 8.0f ? (dx > 0.0f ? 1 : -1) : 0;
 	}
+	else if(Boosting)
+		Dir = m_BoostDir;
 	else if(pTarget)
 	{
-		vec2 d = pTarget->m_Pos - MyPos;
-		float dist = length(d);
-		// stand ground close enough to hook/shoot, otherwise close in
-		if(dist > 260.0f && fabsf(d.x) > 12.0f)
-			Dir = d.x > 0.0f ? 1 : -1;
+		float dx = pTarget->m_Pos.x - MyPos.x;
+		float dy = pTarget->m_Pos.y - MyPos.y;
+		float hd = fabsf(dx);
+		if(Climbing)
+			Dir = m_ClimbDir; // drift towards the prey while being pulled up
+		else if(dy < -140.0f && hd < 700.0f)
+			Dir = hd > 40.0f ? (dx > 0.0f ? 1 : -1) : 0; // get under him
+		else if(hd > 430.0f || dy > 260.0f)
+			Dir = hd > 12.0f ? (dx > 0.0f ? 1 : -1) : 0; // close the gap / drop down
+		else if(hd < 230.0f)
+			Dir = dx != 0.0f ? (dx > 0.0f ? -1 : 1) : m_StrafeDir; // too close: make space
 		else
-			Dir = 0;
+		{
+			// engagement band: patrol left-right instead of standing still
+			if(--m_StrafeTicks <= 0)
+			{
+				m_StrafeTicks = 25 + (int)(frandom() * 25.0f);
+				m_StrafeDir = frandom() < 0.5f ? -1 : 1;
+			}
+			Dir = m_StrafeDir;
+		}
 	}
 	else
 	{
@@ -266,13 +432,74 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		Dir = m_IdleDir;
 	}
 
-	// never walk into spikes: probe the ground ahead of the chosen direction
+	// --- safety: horizontal spikes ahead + deadly shafts below the edge ---
+	bool EdgeBlocked = false;
 	if(Dir != 0)
 	{
 		int f = pGS->Collision()->GetCollisionAt(MyPos.x + Dir * 70.0f, MyPos.y);
 		int f2 = pGS->Collision()->GetCollisionAt(MyPos.x + Dir * 70.0f, MyPos.y - 20.0f);
-		if((f | f2) & BOT_DANGER_MASK)
-			Dir = pCarried ? 0 : -Dir; // carrying: stop short, else pace back
+		int f3 = pGS->Collision()->GetCollisionAt(MyPos.x + Dir * 70.0f, MyPos.y + 16.0f);
+		if((f | f2 | f3) & BOT_DANGER_MASK)
+		{
+			if(Boosting)
+			{
+				m_BoostTicks = 0;
+				Boosting = false;
+				Dir = 0;
+			}
+			else if(pCarried || Climbing)
+				Dir = 0;
+			else
+				Dir = -Dir; // pace back instead of walking into the spikes
+			EdgeBlocked = pCarried != 0;
+		}
+		else if(BotDeadlyDrop(pGS, MyPos, Dir))
+		{
+			// the mid-map fall: something lethal lies at the bottom of this
+			// edge — stop before stepping into the shaft
+			Dir = 0;
+			EdgeBlocked = pCarried != 0;
+		}
+	}
+
+	// --- release (throw): let the prey's momentum carry it into the tiles ---
+	bool WantRelease = false;
+	if(pCarried && HaveSpike)
+	{
+		float dMe = distance(MyPos, SpikePos);
+		vec2 ToSpike = SpikePos - pCarried->m_Pos;
+		float dEnemy = length(ToSpike);
+		float VelToward = dEnemy > 1.0f ? dot(pCarried->GetVel(), normalize(ToSpike)) : 0.0f;
+		float Slide = VelToward * 6.5f + 50.0f; // ground-friction slide estimate
+		if(dEnemy < 750.0f && Slide > dEnemy - 30.0f)
+			WantRelease = true; // momentum covers the remaining gap
+		else if(EdgeBlocked && dEnemy < 320.0f && VelToward > 30.0f)
+			WantRelease = true; // at the lip: push it over
+		else if(EdgeBlocked && SpikePos.y > MyPos.y + 60.0f &&
+			fabsf(SpikePos.x - MyPos.x) < 160.0f && dEnemy < 500.0f)
+			WantRelease = true; // the goal is down the shaft: drop it in
+		else if(m_CarryTicks > 260)
+			WantRelease = true; // frozen on the hook too long: reset the cycle
+		(void)dMe;
+	}
+	if(WantRelease)
+	{
+		float Away = MyPos.x - SpikePos.x;
+		if(Away > 4.0f) m_BackoffDir = -1;
+		else if(Away < -4.0f) m_BackoffDir = 1;
+		else m_BackoffDir = m_IdleDir;
+		m_BackoffTicks = 40;
+		m_PumpTicks = 0;
+		m_CarryTicks = 0;
+		m_SpikeIdx = -1;
+		HaveSpike = false;
+	}
+	else if(pCarried && HaveSpike && EdgeBlocked && m_PumpTicks <= 0 &&
+		m_BackoffTicks <= 0 && m_CarryTicks > 40)
+	{
+		// momentum isn't building: oscillate — drag the prey back a little,
+		// then charge the spikes again (people do exactly this)
+		m_PumpTicks = 24;
 	}
 
 	// --- stuck detection: hop over small obstacles ---
@@ -281,8 +508,8 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		float Moved = distance(MyPos, m_LastPos);
 		if(Dir != 0 && Moved < 10.0f && m_JumpCooldown <= 0 && !pMe->IsFrozen())
 		{
-			m_JumpTicks = 12;    // hold long enough for exactly one hop
-			m_JumpCooldown = 45; // then a release window before the next one
+			m_JumpTicks = 12;
+			m_JumpCooldown = 45;
 		}
 		m_LastPos = MyPos;
 		m_StuckTick = Tick;
@@ -291,12 +518,14 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	if(m_JumpTicks > 0) m_JumpTicks--;
 	if(m_JumpCooldown > 0) m_JumpCooldown--;
 
-	// --- hook: keep the hold while carrying, otherwise chase with it ---
+	// --- hook priority: throw cycle > climb/boost anchor > attack ---
 	bool JustReleased = WantRelease;
 	bool WantHook = false;
-	if(!Backing && !JustReleased)
+	if(m_BackoffTicks <= 0 && !JustReleased)
 	{
-		if(pCarried)
+		if(pCarried || m_PumpTicks > 0)
+			WantHook = true;
+		else if(Climbing || Boosting)
 			WantHook = true;
 		else if(pTarget)
 		{
@@ -332,14 +561,16 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		}
 	}
 
-	// --- shooting: live enemies only (never shoot frozen prey), heal in SAH,
-	//     nothing at all while dragging so the throw is not disturbed ---
+	// --- shooting: live enemies only, never while climbing/boosting or
+	//     dragging (the throw stays undisturbed) ---
+	bool Busy = m_BackoffTicks > 0 || JustReleased || Climbing || Boosting ||
+		m_PumpTicks > 0 || pCarried;
 	bool WantFire = false;
-	if(!Backing && !JustReleased && !pMe->IsFrozen())
+	if(!Busy && !pMe->IsFrozen())
 	{
 		if(pHeal)
 			WantFire = BotLineOfSight(pGS, MyPos, pHeal->m_Pos);
-		else if(!pCarried && pTarget && !pTarget->IsFrozen())
+		else if(pTarget && !pTarget->IsFrozen())
 		{
 			float d = distance(MyPos, pTarget->m_Pos);
 			if(d > 150.0f && d < 850.0f && BotLineOfSight(pGS, MyPos, pTarget->m_Pos))
@@ -352,15 +583,34 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		m_FireState = (m_FireState + 1) & INPUT_STATE_MASK; // land on even so fullauto stops
 	Input.m_Fire = m_FireState;
 
-	// --- aim: heal > carried prey > target, with a small lead ---
-	CCharacter *pAim = pHeal ? pHeal : (pCarried ? pCarried : pTarget);
-	if(pAim)
+	// --- aim: boost/climb anchors first, else heal > prey > target+noise ---
+	vec2 Aim;
+	bool HaveAim = false;
+	if(Boosting)
 	{
-		vec2 Aim = pAim->m_Pos + pAim->GetVel() * 0.15f - MyPos;
-		// fng_trainbot: against the enemy the aim carries the zigzag error,
-		// healing and dragging stay precise
-		if(pTarget && pAim == pTarget)
-			Aim += m_AimNoise;
+		Aim = m_BoostAnchor - MyPos;
+		HaveAim = true;
+	}
+	else if(Climbing)
+	{
+		Aim = m_ClimbAnchor - MyPos;
+		HaveAim = true;
+	}
+	else
+	{
+		CCharacter *pAim = pHeal ? pHeal : (pCarried ? pCarried : pTarget);
+		if(pAim)
+		{
+			Aim = pAim->m_Pos + pAim->GetVel() * 0.15f - MyPos;
+			// fng_trainbot: against the enemy the aim carries the deviation,
+			// healing and dragging stay precise
+			if(pTarget && pAim == pTarget)
+				Aim += m_AimNoise;
+			HaveAim = true;
+		}
+	}
+	if(HaveAim)
+	{
 		if(length(Aim) < 1.0f)
 			Aim = vec2(0.0f, -1.0f);
 		Input.m_TargetX = (int)Aim.x;

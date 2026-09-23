@@ -1,37 +1,24 @@
 ninja: Entering directory `c:\Users\tailznic\Downloads\SNH\build-sah'
-[1/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/eventhandler.cpp.obj
-[2/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/flag.cpp.obj
-[3/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entity.cpp.obj
-[4/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/pickup.cpp.obj
-[5/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/projectile.cpp.obj
-[6/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/laser.cpp.obj
-[7/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/bot.cpp.obj
-[8/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/character.cpp.obj
-[9/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2boom.cpp.obj
-In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/player.h:8,
-                 from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2boom.cpp:4:
-C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontext.h: In member function 'int CGameContext::SendPackMsg(T*, int)':
-C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontext.h:366:36: warning: invalid use of incomplete type 'class CPlayer'
-  366 |                         if (!p || p->m_IsBot) continue; // bot slots have no engine connection
-      |                                    ^~
-In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2boom.h:5,
-                 from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2boom.cpp:2:
-C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontroller.h:48:34: note: forward declaration of 'class CPlayer'
-   48 |         bool EvaluateSpawn(class CPlayer *pP, vec2 *pPos);
-      |                                  ^~~~~~~
-[10/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2solo.cpp.obj
-In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/player.h:8,
-                 from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2solo.cpp:4:
-C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontext.h: In member function 'int CGameContext::SendPackMsg(T*, int)':
-C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontext.h:366:36: warning: invalid use of incomplete type 'class CPlayer'
-  366 |                         if (!p || p->m_IsBot) continue; // bot slots have no engine connection
-      |                                    ^~
-In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2solo.h:5,
-                 from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2solo.cpp:2:
-C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontroller.h:48:34: note: forward declaration of 'class CPlayer'
-   48 |         bool EvaluateSpawn(class CPlayer *pP, vec2 *pPos);
-      |                                  ^~~~~~~
-[11/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2.cpp.obj
+[1/32] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/engine.cpp.obj
+[2/32] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/econ.cpp.obj
+[3/32] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/network.cpp.obj
+[4/32] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/packer.cpp.obj
+[5/32] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/network_conn.cpp.obj
+[6/32] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/network_server.cpp.obj
+[7/32] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/config.cpp.obj
+[8/32] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/netban.cpp.obj
+[9/32] Building CXX object CMakeFiles/game-shared.dir/src/game/gamecore.cpp.obj
+[10/32] Building CXX object CMakeFiles/engine-shared.dir/src/engine/shared/console.cpp.obj
+[11/32] Building CXX object CMakeFiles/fng2_srv.dir/src/engine/server/register.cpp.obj
+[12/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/flag.cpp.obj
+[13/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/pickup.cpp.obj
+[14/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/projectile.cpp.obj
+[15/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/laser.cpp.obj
+[16/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entity.cpp.obj
+[17/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/bot.cpp.obj
+[18/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/eventhandler.cpp.obj
+[19/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/entities/character.cpp.obj
+[20/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2.cpp.obj
 In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/player.h:8,
                  from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2.cpp:4:
 C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontext.h: In member function 'int CGameContext::SendPackMsg(T*, int)':
@@ -43,7 +30,19 @@ In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/
 C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontroller.h:48:34: note: forward declaration of 'class CPlayer'
    48 |         bool EvaluateSpawn(class CPlayer *pP, vec2 *pPos);
       |                                  ^~~~~~~
-[12/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2boomsolo.cpp.obj
+[21/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2boom.cpp.obj
+In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/player.h:8,
+                 from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2boom.cpp:4:
+C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontext.h: In member function 'int CGameContext::SendPackMsg(T*, int)':
+C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontext.h:366:36: warning: invalid use of incomplete type 'class CPlayer'
+  366 |                         if (!p || p->m_IsBot) continue; // bot slots have no engine connection
+      |                                    ^~
+In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2boom.h:5,
+                 from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2boom.cpp:2:
+C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontroller.h:48:34: note: forward declaration of 'class CPlayer'
+   48 |         bool EvaluateSpawn(class CPlayer *pP, vec2 *pPos);
+      |                                  ^~~~~~~
+[22/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2boomsolo.cpp.obj
 In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/player.h:8,
                  from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2boomsolo.cpp:4:
 C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontext.h: In member function 'int CGameContext::SendPackMsg(T*, int)':
@@ -55,8 +54,20 @@ In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/
 C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontroller.h:48:34: note: forward declaration of 'class CPlayer'
    48 |         bool EvaluateSpawn(class CPlayer *pP, vec2 *pPos);
       |                                  ^~~~~~~
-[13/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamecontroller.cpp.obj
-[14/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/sah.cpp.obj
+[23/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamecontroller.cpp.obj
+[24/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2solo.cpp.obj
+In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/player.h:8,
+                 from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2solo.cpp:4:
+C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontext.h: In member function 'int CGameContext::SendPackMsg(T*, int)':
+C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontext.h:366:36: warning: invalid use of incomplete type 'class CPlayer'
+  366 |                         if (!p || p->m_IsBot) continue; // bot slots have no engine connection
+      |                                    ^~
+In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2solo.h:5,
+                 from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2solo.cpp:2:
+C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontroller.h:48:34: note: forward declaration of 'class CPlayer'
+   48 |         bool EvaluateSpawn(class CPlayer *pP, vec2 *pPos);
+      |                                  ^~~~~~~
+[25/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/sah.cpp.obj
 In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/player.h:8,
                  from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/sah.cpp:5:
 C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontext.h: In member function 'int CGameContext::SendPackMsg(T*, int)':
@@ -68,8 +79,7 @@ In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/
 C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontroller.h:48:34: note: forward declaration of 'class CPlayer'
    48 |         bool EvaluateSpawn(class CPlayer *pP, vec2 *pPos);
       |                                  ^~~~~~~
-[15/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gameworld.cpp.obj
-[16/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2_4teams.cpp.obj
+[26/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamemodes/fng2_4teams.cpp.obj
 In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/player.h:8,
                  from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/fng2_4teams.cpp:4:
 C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontext.h: In member function 'int CGameContext::SendPackMsg(T*, int)':
@@ -81,8 +91,17 @@ In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/gamemodes/
 C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontroller.h:48:34: note: forward declaration of 'class CPlayer'
    48 |         bool EvaluateSpawn(class CPlayer *pP, vec2 *pPos);
       |                                  ^~~~~~~
-[17/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/laserText.cpp.obj
-[18/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/player.cpp.obj
+[27/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gameworld.cpp.obj
+[28/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/laserText.cpp.obj
+[29/32] Building CXX object CMakeFiles/fng2_srv.dir/src/engine/server/server.cpp.obj
+C:/Users/tailznic/Downloads/SNH/src/engine/server/server.cpp: In static member function 'static void CServer::SendRconLineAuthed(const char*, void*)':
+C:/Users/tailznic/Downloads/SNH/src/engine/server/server.cpp:899:9: warning: '++' expression of 'volatile'-qualified type is deprecated [-Wvolatile]
+  899 |         ReentryGuard++;
+      |         ^~~~~~~~~~~~
+C:/Users/tailznic/Downloads/SNH/src/engine/server/server.cpp:907:9: warning: '--' expression of 'volatile'-qualified type is deprecated [-Wvolatile]
+  907 |         ReentryGuard--;
+      |         ^~~~~~~~~~~~
+[30/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/player.cpp.obj
 In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/player.h:8,
                  from C:/Users/tailznic/Downloads/SNH/src/game/server/player.cpp:5:
 C:/Users/tailznic/Downloads/SNH/src/game/server/gamecontext.h: In member function 'int CGameContext::SendPackMsg(T*, int)':
@@ -93,5 +112,5 @@ In file included from C:/Users/tailznic/Downloads/SNH/src/game/server/player.h:7
 C:/Users/tailznic/Downloads/SNH/src/game/server/entities/character.h:63:26: note: forward declaration of 'class CPlayer'
    63 |         bool Spawn(class CPlayer *pPlayer, vec2 Pos);
       |                          ^~~~~~~
-[19/20] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamecontext.cpp.obj
-[20/20] Linking CXX executable fng2_srv.exe
+[31/32] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/gamecontext.cpp.obj
+[32/32] Linking CXX executable fng2_srv.exe

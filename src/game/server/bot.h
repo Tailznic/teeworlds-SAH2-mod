@@ -31,6 +31,26 @@ private:
 	vec2 m_LastTargetVel; // target velocity measured last tick
 	float m_Predict;      // 0 = smooth movement (hits), 1 = hard zigzag (misses)
 	int m_NoiseTick;      // ticks until the aim error is re-rolled
+
+	// positioning: patrol inside the engagement band instead of standing still
+	int m_StrafeDir;
+	int m_StrafeTicks;
+
+	// throw cycle: drag the prey back, charge again, release on momentum
+	int m_PumpTicks;
+	int m_CarryTicks;     // ticks the current prey has been on the hook
+
+	// vertical navigation: hook-climb to higher platforms
+	int m_ClimbTicks;
+	int m_ClimbDir;
+	int m_ClimbAnchorTick;
+	vec2 m_ClimbAnchor;
+
+	// hook-boost bursts (people hook the ground ahead to accelerate)
+	int m_BoostTicks;
+	int m_BoostCooldown;
+	int m_BoostDir;
+	vec2 m_BoostAnchor;
 };
 
 #endif
