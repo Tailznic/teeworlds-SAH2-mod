@@ -48,6 +48,7 @@ void CGameContext::Construct(int Resetting)
 		m_aBotAI[i].Reset();
 	}
 	m_NumBotSpikes = 0;
+	m_NumBotNav = 0;
 
 	m_pController = 0;
 	m_VoteCloseTime = 0;
@@ -984,6 +985,79 @@ void CGameContext::CollectBotSpikes()
 			m_NumBotSpikes++;
 		}
 	}
+}
+
+// fng_trainbot: standable shelves of the map — air tiles with solid floor
+// under them, headroom above and some distance from kill tiles. Points are
+// subsampled along each floor run so the bot can patrol the way people do:
+// hold the mid band, check the own-side and the high platforms.
+void CGameContext::CollectBotNav()
+{
+	m_NumBotNav = 0;
+	CCollision *pCol = Collision();
+	const int Danger = (int)CCollision::COLFLAG_DEATH |
+		(int)CCollision::COLFLAG_SPIKE_NORMAL | (int)CCollision::COLFLAG_SPIKE_RED |
+		(int)CCollision::COLFLAG_SPIKE_BLUE | (int)CCollision::COLFLAG_SPIKE_GOLD |
+		(int)CCollision::COLFLAG_SPIKE_GREEN | (int)CCollision::COLFLAG_SPIKE_PURPLE;
+	const int W = pCol->GetWidth();
+	const int H = pCol->GetHeight();
+	const int cx = W / 2;
+
+	for(int y = 2; y < H - 2 && m_NumBotNav < MAX_BOT_NAV; y++)
+	{
+		int RunStart = -1;
+		for(int x = 0; x <= W && m_NumBotNav < MAX_BOT_NAV; x++)
+		{
+			bool Stand = false;
+			if(x < W)
+			{
+				float px = x * 32.0f + 16.0f;
+				float py = y * 32.0f + 16.0f;
+				int Here = pCol->GetCollisionAt(px, py);
+				int Below = pCol->GetCollisionAt(px, py + 32.0f);
+				int Above1 = pCol->GetCollisionAt(px, py - 32.0f);
+				int Above2 = pCol->GetCollisionAt(px, py - 64.0f);
+				Stand = !(Here & (Danger | CCollision::COLFLAG_SOLID)) &&
+					!(Above1 & (Danger | CCollision::COLFLAG_SOLID)) &&
+					!(Above2 & (Danger | CCollision::COLFLAG_SOLID)) &&
+					(Below & CCollision::COLFLAG_SOLID) && !(Below & Danger);
+				if(Stand)
+				{
+					// keep two tiles of clearance from kill tiles at body
+					// and head height — humans never stand next to spikes
+					for(int dx = -2; dx <= 2 && Stand; dx++)
+					{
+						int f = pCol->GetCollisionAt(px + dx * 32.0f, py);
+						int f2 = pCol->GetCollisionAt(px + dx * 32.0f, py - 32.0f);
+						if((f | f2) & Danger)
+							Stand = false;
+					}
+				}
+			}
+			if(Stand && RunStart < 0)
+				RunStart = x;
+			else if(!Stand && RunStart >= 0)
+			{
+				int Len = x - RunStart;
+				int Step = Len >= 32 ? 8 : (Len >= 12 ? 4 : Len);
+				for(int sx = RunStart; sx < x; sx += Step)
+				{
+					CBotNavPoint &P = m_aBotNav[m_NumBotNav];
+					P.m_Pos = vec2(sx * 32.0f + 16.0f, y * 32.0f + 16.0f);
+					P.m_Band = y <= 40 ? 2 : (y <= 92 ? 1 : 0);
+					P.m_Side = sx < cx - 20 ? -1 : (sx > cx + 20 ? 1 : 0);
+					m_NumBotNav++;
+					if(m_NumBotNav >= MAX_BOT_NAV)
+						break;
+				}
+				RunStart = -1;
+			}
+		}
+	}
+
+	char aBuf[64];
+	str_format(aBuf, sizeof(aBuf), "bot nav points: %d (map %dx%d)", m_NumBotNav, W, H);
+	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
 }
 
 void CGameContext::OnMessage(int MsgID, CUnpacker *pUnpacker, int ClientID)
@@ -2254,6 +2328,7 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 
 	// SAH: spike navigation targets + practice bots for this map
 	CollectBotSpikes();
+	CollectBotNav();
 	CreateConfiguredBots();
 
 #ifdef CONF_DEBUG
@@ -2359,6 +2434,7 @@ void CGameContext::OnInit(IKernel *pKernel, IMap* pMap, CConfiguration* pConfigF
 
 	// SAH: spike navigation targets + practice bots for this map
 	CollectBotSpikes();
+	CollectBotNav();
 	CreateConfiguredBots();
 
 #ifdef CONF_DEBUG

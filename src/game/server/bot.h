@@ -51,6 +51,17 @@ private:
 	int m_BoostCooldown;
 	int m_BoostDir;
 	vec2 m_BoostAnchor;
+
+	// fng_trainbot: hook-down + jump dodge — 37% of all hook launches in
+	// the human demo went straight down (the FNG pump/redirect move)
+	int m_DodgeTicks;
+	int m_DodgeCooldown;
+
+	// fng_trainbot: patrol along the map's precomputed standable shelves
+	int m_NavIdx;            // current patrol point, -1 = pick one
+	vec2 m_NavGoal;
+	int m_NavRetargetTick;
+	void PickNavPoint(CGameContext *pGS, vec2 MyPos, int MyTeam, int Tick);
 };
 
 #endif

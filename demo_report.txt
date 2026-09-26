@@ -1,0 +1,68 @@
+=== DEMO ===
+netver: 0.6 626fce9a778df4d4  map: fngTraining 460933 B  type: client  ver: 6  ts: 2026-09-23_06-00-23
+header length: 19 s
+ticks: 2309144 .. 2310096 = 19.0 s  samples: 924  avg dt = 1.0 ticks
+[demo map] 270x400 solid=5269 death=1104 entities=43 spikes={'gold': 122, 'purple': 71, 'green': 33, 'normal': 387, 'red': 260, 'blue': 260}
+[server fng.map] 270x150 solid=2626 death=540 entities=16 spikes={'green': 15, 'normal': 134, 'red': 101, 'blue': 101, 'purple': 6, 'gold': 30}
+
+=== ROSTER (last seen) ===
+ cid=0  team=red     score=0    студент
+ cid=1  team=red     score=2    tailznic
+ cid=3  team=red     score=127  BANANA6789
+ cid=4  team=red     score=0    банауап
+
+=== BANANA6789 (cid=3) ===
+samples with tee: 924 / 924 = 100.0 % of demo time
+
+--- movement ---
+alive window: 19.0s  path: 7817 px = 244 tiles
+ticks without self-movement: 52% (frozen by enemy or standing)
+speed from velocity field: avg=8.6 p50=8.4 p95=16.6 px/tick (= avg 13.4 tiles/s)
+speed from positions: avg=7.56 p50=0.00 p95=30.00 max=98.86 px/tick
+x range: 144..208 (map 270)  y range: 59..85 (map 400, 0=top)
+x thirds L/M/R: 0% / 50% / 50%
+y thirds T/M/B: 100% / 0% / 0%
+vertical band changes: 0 = 0.0/min
+airborne: 83% of samples
+direction reversals: 19 = 1.0/s  avg hold 33 ticks (0.66s) longest 87
+jumps: ground=9 air=3 (28.4+9.5 per min)
+
+--- hook ---
+launches=19  grabs: player=12 ground/wall=21  hit-nohook=1
+hook state time: idle=50%, retract=1%, flying=4%, grabbed=46%
+grab range px: avg=157 p50=144 max=317 (= 4.9 tiles)
+hooks aimed straight DOWN: 7 (37% of launches); with jump within +-10 ticks: 0 = the human hook-down+jump dodge
+speed gain during grab: avg=1.34 p50=0.50 p95=4.85 max=5.01 px/tick
+
+--- shooting ---
+shots: 19 = 59.9/min  weapons used: ['hammer', 'laser']
+nearest enemy at shot: avg=3.3 p50=1.9 tiles
+
+--- frags ---
+kill msgs: as killer=1 as victim=0  DEATH events=0
+  t+  12.3s BANANA6789     -> банауап        wep=laser(4)
+
+--- kill tiles / spikes ---
+within 1.5 tiles of a spike: 0% of samples; nearest colour share:
+   gold      0.0%
+   purple    0.0%
+   green     0.0%
+   normal    0.0%
+   red       0.0%
+   blue      0.0%
+distance to nearest spike: p10=6.9 p50=9.2 tiles
+death events on: spike tile=0 death tile=0 other=0
+
+--- occupancy heat map (6x6, %% of samples, row 0=top) ---
+     0    0    0   17    0    0
+     0    0    0   33   50    0
+     0    0    0    0    0    0
+     0    0    0    0    0    0
+     0    0    0    0    0    0
+     0    0    0    0    0    0
+
+--- all players: speed & reversal comparison ---
+  BANANA6789       samples=924  avg=8.48 p95=30.46 reversals=1.0/s
+  банауап          samples=872  avg=6.44 p95=16.16 reversals=0.0/s
+
+--- chat ---

@@ -156,6 +156,58 @@ void CBotAI::Reset()
 	m_BoostCooldown = 0;
 	m_BoostDir = 1;
 	m_BoostAnchor = vec2(0.0f, 0.0f);
+	m_DodgeTicks = 0;
+	m_DodgeCooldown = 0;
+	m_NavIdx = -1;
+	m_NavGoal = vec2(0.0f, 0.0f);
+	m_NavRetargetTick = 0;
+}
+
+// fng_trainbot: pick the next patrol point — own side favoured, the mid
+// band (fight zone) preferred, the high platforms and the enemy half only
+// visited now and then; jitter so no two walks are the same
+void CBotAI::PickNavPoint(CGameContext *pGS, vec2 MyPos, int MyTeam, int Tick)
+{
+	if(pGS->m_NumBotNav <= 0)
+	{
+		m_NavIdx = -1;
+		m_NavRetargetTick = Tick + 100;
+		return;
+	}
+	int MySide = MyTeam == TEAM_RED ? -1 : (MyTeam == TEAM_BLUE ? 1 : 0);
+	float Best = 0.0f;
+	int BestI = -1;
+	for(int t = 0; t < 12; t++)
+	{
+		int i = (int)(frandom() * pGS->m_NumBotNav);
+		if(i < 0 || i >= pGS->m_NumBotNav)
+			continue;
+		const CGameContext::CBotNavPoint &P = pGS->m_aBotNav[i];
+		float d = distance(MyPos, P.m_Pos);
+		if(d > 1400.0f)
+			continue;
+		float Score = d * 0.5f + frandom() * 700.0f;
+		if(d < 200.0f)
+			Score += 2000.0f;           // don't re-pick what we already reached
+		if(P.m_Side == MySide && MySide != 0)
+			Score -= 400.0f;            // hold your own half
+		else if(P.m_Side != 0 && MySide != 0 && P.m_Side != MySide)
+			Score += 300.0f;            // raids into the enemy half are rare
+		if(P.m_Band == 1)
+			Score -= 250.0f;            // mid band is where the fight happens
+		else if(P.m_Band == 2 && frandom() < 0.3f)
+			Score -= 200.0f;            // sometimes take the high ground
+		if(BestI < 0 || Score < Best)
+		{
+			Best = Score;
+			BestI = i;
+		}
+	}
+	if(BestI < 0)
+		BestI = (int)(frandom() * pGS->m_NumBotNav) % pGS->m_NumBotNav;
+	m_NavIdx = BestI;
+	m_NavGoal = pGS->m_aBotNav[BestI].m_Pos;
+	m_NavRetargetTick = Tick + 100 + (int)(frandom() * 150.0f);
 }
 
 void CBotAI::Tick(CGameContext *pGS, int ClientID)
@@ -306,6 +358,11 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	bool HaveSpike = pCarried && m_SpikeIdx >= 0;
 	vec2 SpikePos = HaveSpike ? pGS->m_aBotSpikes[m_SpikeIdx].m_Pos : MyPos;
 
+	// fng_trainbot: one navigation goal — the enemy when there is one,
+	// otherwise the current patrol point on the map's shelves
+	vec2 Goal = pTarget ? pTarget->m_Pos : m_NavGoal;
+	bool HaveGoal = pTarget != 0 || (pGS->m_NumBotNav > 0 && m_NavIdx >= 0);
+
 	// --- vertical states: hook-climb up, hook-boost forward ---
 	bool Climbing = m_ClimbTicks > 0;
 	bool Boosting = m_BoostTicks > 0;
@@ -314,18 +371,18 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	if(Climbing)
 	{
 		m_ClimbTicks--;
-		if(!pTarget || m_ClimbTicks <= 0 ||
-			pTarget->m_Pos.y - MyPos.y > -60.0f ||
+		if(!HaveGoal || m_ClimbTicks <= 0 ||
+			Goal.y - MyPos.y > -60.0f ||
 			!BotHookablePoint(pGS, m_ClimbAnchor))
 		{
 			m_ClimbTicks = 0;
 			Climbing = false;
 		}
 	}
-	if(!pCarried && m_BackoffTicks <= 0 && pTarget && !Boosting)
+	if(!pCarried && m_BackoffTicks <= 0 && HaveGoal && !Boosting)
 	{
-		float dy = pTarget->m_Pos.y - MyPos.y;
-		float hd = fabsf(pTarget->m_Pos.x - MyPos.x);
+		float dy = Goal.y - MyPos.y;
+		float hd = fabsf(Goal.x - MyPos.x);
 		if(dy < -140.0f && hd < 700.0f)
 			WantClimb = true;
 	}
@@ -333,11 +390,11 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	{
 		m_ClimbAnchorTick = Tick + 8;
 		vec2 A;
-		if(BotFindClimbAnchor(pGS, MyPos, pTarget->m_Pos, &A))
+		if(BotFindClimbAnchor(pGS, MyPos, Goal, &A))
 		{
 			m_ClimbAnchor = A;
 			m_ClimbTicks = 70;
-			float dxa = pTarget->m_Pos.x - MyPos.x;
+			float dxa = Goal.x - MyPos.x;
 			m_ClimbDir = dxa > 40.0f ? 1 : (dxa < -40.0f ? -1 : 0);
 			Climbing = true;
 		}
@@ -354,11 +411,15 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	}
 	if(m_BoostCooldown > 0)
 		m_BoostCooldown--;
+	if(m_DodgeTicks > 0)
+		m_DodgeTicks--;
+	if(m_DodgeCooldown > 0)
+		m_DodgeCooldown--;
 	if(!pCarried && !Climbing && !Boosting && m_BackoffTicks <= 0 &&
-		m_BoostCooldown <= 0 && pTarget)
+		m_BoostCooldown <= 0 && HaveGoal)
 	{
-		float d = distance(MyPos, pTarget->m_Pos);
-		float ddx = pTarget->m_Pos.x - MyPos.x;
+		float d = distance(MyPos, Goal);
+		float ddx = Goal.x - MyPos.x;
 		int sdir = ddx > 12.0f ? 1 : (ddx < -12.0f ? -1 : 0);
 		if(d > 650.0f && sdir != 0 && pMe->IsGrounded())
 		{
@@ -372,6 +433,18 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 				Boosting = true;
 			}
 		}
+	}
+
+	// fng_trainbot: the human hook-down redirect — 37% of all hook launches
+	// in the demo went straight down; a quick mid-air pump to kill momentum
+	// or dodge, no jump with it (the demo never combined the two)
+	if(!pCarried && !Climbing && !Boosting && m_BackoffTicks <= 0 &&
+		m_DodgeTicks <= 0 && m_DodgeCooldown <= 0 && pTarget &&
+		!pMe->IsFrozen() && !pMe->IsGrounded() &&
+		distance(MyPos, pTarget->m_Pos) < 600.0f && frandom() < 0.02f)
+	{
+		m_DodgeTicks = 8;
+		m_DodgeCooldown = 80 + (int)(frandom() * 100.0f);
 	}
 
 	// --- movement: take position, never just stand there ---
@@ -423,13 +496,28 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	}
 	else
 	{
-		// nobody to fight: wander
-		if(--m_IdleTicks <= 0)
+		// fng_trainbot: patrol the map's shelves instead of pacing one
+		// spot — own side first, mid band preferred, re-pick on arrival
+		// or when the walk takes too long
+		if(m_NavIdx < 0 || pGS->m_NumBotNav <= 0 ||
+			(Tick >= m_NavRetargetTick && !Climbing) ||
+			distance(MyPos, m_NavGoal) < 72.0f)
+			PickNavPoint(pGS, MyPos, MyTeam, Tick);
+		if(m_NavIdx >= 0 && pGS->m_NumBotNav > 0)
 		{
-			m_IdleTicks = 100;
-			m_IdleDir = -m_IdleDir;
+			float dx = m_NavGoal.x - MyPos.x;
+			Dir = fabsf(dx) > 16.0f ? (dx > 0.0f ? 1 : -1) : 0;
 		}
-		Dir = m_IdleDir;
+		else
+		{
+			// no nav data on this map: legacy wander
+			if(--m_IdleTicks <= 0)
+			{
+				m_IdleTicks = 100;
+				m_IdleDir = -m_IdleDir;
+			}
+			Dir = m_IdleDir;
+		}
 	}
 
 	// --- safety: horizontal spikes ahead + deadly shafts below the edge ---
@@ -518,6 +606,17 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	if(m_JumpTicks > 0) m_JumpTicks--;
 	if(m_JumpCooldown > 0) m_JumpCooldown--;
 
+	// fng_trainbot: humans hop constantly even when nothing blocks them
+	// (demo: ~28 ground jumps/min) — keeps the walk from looking robotic
+	if(pMe->IsGrounded() && m_JumpCooldown <= 0 && !pMe->IsFrozen() &&
+		!pCarried && !Climbing && !Boosting && m_DodgeTicks <= 0 &&
+		m_BackoffTicks <= 0 && frandom() < 0.008f)
+	{
+		m_JumpTicks = 10;
+		m_JumpCooldown = 60;
+		WantJump = true;
+	}
+
 	// --- hook priority: throw cycle > climb/boost anchor > attack ---
 	bool JustReleased = WantRelease;
 	bool WantHook = false;
@@ -527,10 +626,14 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			WantHook = true;
 		else if(Climbing || Boosting)
 			WantHook = true;
+		else if(m_DodgeTicks > 0)
+			WantHook = true; // the straight-down redirect
 		else if(pTarget)
 		{
+			// fng_trainbot: demo grab range was avg 157 / max 317 px —
+			// people never hook from 750, they walk in first
 			float d = distance(MyPos, pTarget->m_Pos);
-			if(d < 750.0f && BotLineOfSight(pGS, MyPos, pTarget->m_Pos))
+			if(d < 340.0f && BotLineOfSight(pGS, MyPos, pTarget->m_Pos))
 				WantHook = true;
 		}
 	}
@@ -561,10 +664,10 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		}
 	}
 
-	// --- shooting: live enemies only, never while climbing/boosting or
-	//     dragging (the throw stays undisturbed) ---
+	// --- shooting: live enemies only, never while climbing/boosting,
+	//     dragging or dodging (the throw stays undisturbed) ---
 	bool Busy = m_BackoffTicks > 0 || JustReleased || Climbing || Boosting ||
-		m_PumpTicks > 0 || pCarried;
+		m_PumpTicks > 0 || pCarried || m_DodgeTicks > 0;
 	bool WantFire = false;
 	if(!Busy && !pMe->IsFrozen())
 	{
@@ -572,8 +675,10 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			WantFire = BotLineOfSight(pGS, MyPos, pHeal->m_Pos);
 		else if(pTarget && !pTarget->IsFrozen())
 		{
+			// fng_trainbot: demo shots flew at avg 3.3 / p50 1.9 tiles —
+			// close-range duelling, not sniping across the map
 			float d = distance(MyPos, pTarget->m_Pos);
-			if(d > 150.0f && d < 850.0f && BotLineOfSight(pGS, MyPos, pTarget->m_Pos))
+			if(d > 60.0f && d < 420.0f && BotLineOfSight(pGS, MyPos, pTarget->m_Pos))
 				WantFire = true;
 		}
 	}
@@ -583,10 +688,17 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		m_FireState = (m_FireState + 1) & INPUT_STATE_MASK; // land on even so fullauto stops
 	Input.m_Fire = m_FireState;
 
-	// --- aim: boost/climb anchors first, else heal > prey > target+noise ---
+	// --- aim: dodge down > boost/climb anchors > heal > prey > target+noise
+	//     > the patrol point we walk to ---
 	vec2 Aim;
 	bool HaveAim = false;
-	if(Boosting)
+	if(m_DodgeTicks > 0)
+	{
+		// straight down with a slight jitter — the human hook-down pump
+		Aim = vec2((frandom() - 0.5f) * 60.0f, 300.0f);
+		HaveAim = true;
+	}
+	else if(Boosting)
 	{
 		Aim = m_BoostAnchor - MyPos;
 		HaveAim = true;
@@ -606,6 +718,12 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			// healing and dragging stay precise
 			if(pTarget && pAim == pTarget)
 				Aim += m_AimNoise;
+			HaveAim = true;
+		}
+		else if(HaveGoal)
+		{
+			// fng_trainbot: while patrolling look where we walk
+			Aim = Goal - MyPos;
 			HaveAim = true;
 		}
 	}

@@ -236,6 +236,18 @@ public:
 	int m_NumBotSpikes;
 	void CollectBotSpikes();
 
+	// fng_trainbot: standable shelves of the map, for patrol navigation
+	enum { MAX_BOT_NAV = 768 };
+	struct CBotNavPoint
+	{
+		vec2 m_Pos;
+		signed char m_Band;   // 0 = low, 1 = mid (fight zone), 2 = high
+		signed char m_Side;   // -1 = left (red), 0 = centre, 1 = right (blue)
+	};
+	CBotNavPoint m_aBotNav[MAX_BOT_NAV];
+	int m_NumBotNav;
+	void CollectBotNav();
+
 	// SAH: spike-death melting ring animation state (per victim, position is static)
 	struct CDeathAnim
 	{
