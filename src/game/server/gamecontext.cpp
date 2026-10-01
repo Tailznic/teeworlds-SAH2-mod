@@ -46,6 +46,7 @@ void CGameContext::Construct(int Resetting)
 	{
 		m_aIsBot[i] = false;
 		m_aBotAI[i].Reset();
+		m_aBotTauntTick[i] = -1000000;
 	}
 	m_NumBotSpikes = 0;
 	m_NumBotNav = 0;
@@ -939,7 +940,7 @@ void CGameContext::RemoveBot(int ClientID, bool Announce)
 
 void CGameContext::CreateConfiguredBots()
 {
-	int Want = clamp((int)m_Config->m_SvBotCount, 0, 4);
+	int Want = clamp((int)m_Config->m_SvBotCount, 0, (int)Server()->MaxClients());
 	int Have = 0;
 	for(int i = 0; i < MAX_CLIENTS; i++)
 		if(m_aIsBot[i])
@@ -950,6 +951,28 @@ void CGameContext::CreateConfiguredBots()
 			break;
 		Have++;
 	}
+}
+
+// fng_trainbot: "ez" right after the freeze — the classic gloat. Only the
+// bot itself speaks, only into global chat, only at enemies, and never more
+// often than once per 5 seconds per bot (a hooker freezing a whole team
+// would otherwise flood the chat)
+void CGameContext::BotTauntOnFreeze(int FreezerCID, int VictimCID)
+{
+	if(!g_Config.m_SvBotTaunt)
+		return;
+	if(FreezerCID < 0 || FreezerCID >= MAX_CLIENTS || !m_aIsBot[FreezerCID])
+		return;
+	if(VictimCID < 0 || VictimCID >= MAX_CLIENTS || VictimCID == FreezerCID || !m_apPlayers[VictimCID])
+		return;
+	// never gloat at a teammate (wrong-spike self-freeze paths count as victim==enemy here anyway)
+	if(m_pController && m_pController->IsTeamplay() &&
+		m_apPlayers[VictimCID]->GetTeam() == m_apPlayers[FreezerCID]->GetTeam())
+		return;
+	if(Server()->Tick() - m_aBotTauntTick[FreezerCID] < Server()->TickSpeed() * 5)
+		return;
+	m_aBotTauntTick[FreezerCID] = Server()->Tick();
+	SendChat(FreezerCID, CHAT_ALL, "\xe2\x98\xbf" "ez"); // ♿ez
 }
 
 void CGameContext::TickBots()

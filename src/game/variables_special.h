@@ -61,8 +61,10 @@ MACRO_CONFIG_INT(SvSahFreezeMarkerSpawn, sv_sah_freeze_marker_spawn, 1, 0, 1, CF
 MACRO_CONFIG_INT(SvSahHookFireDelay, sv_sah_hook_fire_delay, 800, 0, 3000, CFGFLAG_SERVER, "SAH: кулдаун пере-хука после промаха в мс (0 = без кулдауна)")
 MACRO_CONFIG_INT(SvSahCooldownRing, sv_sah_cooldown_ring, 1, 0, 1, CFGFLAG_SERVER, "SAH: кольцо-загрузка вокруг игрока при кулдауне хука (сжимается по мере перезарядки, видит только владелец)")
 // SAH: server-side practice bot
-MACRO_CONFIG_INT(SvBotCount, sv_bot_count, 1, 0, 4, CFGFLAG_SERVER, "SAH: сколько ботов добавлять при старте (слоты с конца; 0 = выкл)")
+MACRO_CONFIG_INT(SvBotCount, sv_bot_count, 1, 0, 16, CFGFLAG_SERVER, "SAH: сколько ботов добавлять при старте (слоты с конца; 0 = выкл; макс = sv_max_clients)")
 MACRO_CONFIG_STR(SvBotName, sv_bot_name, 16, "Bot", CFGFLAG_SERVER, "SAH: имя бота")
+// fng_trainbot: bot gloats in chat when it freezes someone
+MACRO_CONFIG_INT(SvBotTaunt, sv_bot_taunt, 1, 0, 1, CFGFLAG_SERVER, "BOT: бот пишёт в чат при заморозке врага (1=вкл)")
 // fng_trainbot: how human the practice bot plays
 MACRO_CONFIG_INT(SvBotSkill, sv_bot_skill, -1, -1, 100, CFGFLAG_SERVER, "BOT: точность 0..100 (-1 = каждому боту свой случайный уровень; 100 = всегда попадает идеально)")
 MACRO_CONFIG_INT(SvBotThrow, sv_bot_throw, 1, 0, 1, CFGFLAG_SERVER, "BOT: закидывать зафризных в шипы (1=вкл — бот встаёт так, чтобы шипы легли на линию «жертва→бот» и затаскивает хуком)")

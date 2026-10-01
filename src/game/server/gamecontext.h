@@ -225,6 +225,11 @@ public:
 	void CleanupBotsOnInit();
 	void TickBots();
 
+	// fng_trainbot: bot gloats in chat right after it froze someone (sv_bot_taunt);
+	// per-bot cooldown so a busy bot never floods the chat
+	int m_aBotTauntTick[MAX_CLIENTS];
+	void BotTauntOnFreeze(int FreezerCID, int VictimCID);
+
 	// SAH: precomputed spike tiles for bot throw navigation
 	enum { MAX_BOT_SPIKES = 2048 };
 	struct CBotSpike
