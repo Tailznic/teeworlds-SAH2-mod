@@ -427,10 +427,195 @@ void CBotAI::Reset()
 	// rewards start saying otherwise
 	for(int i = 0; i < NUM_BOTACTIONS; i++)
 		m_aWeights[i] = 1.0f / (float)NUM_BOTACTIONS;
+	for(int i = 0; i < NUM_NN_INPUTS; i++)
+		for(int h = 0; h < NUM_NN_HIDDEN; h++)
+			m_aNNInputHidden[i][h] = (frandom() - 0.5f) * 0.2f;
+	for(int h = 0; h < NUM_NN_HIDDEN; h++)
+	{
+		m_aNNHiddenBias[h] = (frandom() - 0.5f) * 0.1f;
+		for(int a = 0; a < NUM_BOTACTIONS; a++)
+			m_aNNHiddenOutput[h][a] = (frandom() - 0.5f) * 0.4f;
+	}
+	for(int a = 0; a < NUM_BOTACTIONS; a++)
+		m_aNNOutputBias[a] = 0.0f;
+	m_PendingReward = 0.0f;
+	m_LastState = 0;
+	m_LastAction = BOTACT_HOLD;
+	m_HasTransition = false;
 	m_Action = BOTACT_HUNT;
 	m_ActionTick = 0;
 	m_ActionRewardTick = 0;
 	m_BrainLoaded = false;
+}
+
+int CBotAI::Observation(CGameContext *pGS, int ClientID) const
+{
+	if(!pGS || ClientID < 0 || ClientID >= MAX_CLIENTS || !pGS->m_apPlayers[ClientID])
+		return 0;
+	CPlayer *pSelf = pGS->m_apPlayers[ClientID];
+	CCharacter *pMe = pSelf->GetCharacter();
+	if(!pMe || !pMe->IsAlive())
+		return 0;
+
+	bool Enemy = false;
+	bool FrozenEnemy = false;
+	bool FrozenMate = false;
+	float Nearest = 1e9f;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(i == ClientID || !pGS->m_apPlayers[i])
+			continue;
+		CCharacter *pC = pGS->m_apPlayers[i]->GetCharacter();
+		if(!pC || !pC->IsAlive())
+			continue;
+		if(pGS->m_apPlayers[i]->GetTeam() == pSelf->GetTeam())
+		{
+			if(pC->IsFrozen())
+				FrozenMate = true;
+		}
+		else
+		{
+			Enemy = true;
+			FrozenEnemy = FrozenEnemy || pC->IsFrozen();
+			Nearest = min(Nearest, distance(pMe->m_Pos, pC->m_Pos));
+		}
+	}
+	int DistanceBand = Nearest < 400.0f ? 0 : (Nearest < 900.0f ? 1 : 2);
+	int State = DistanceBand * 2 + (Enemy ? 1 : 0);
+	State = State * 2 + (FrozenMate ? 1 : 0);
+	State = State * 2 + (FrozenEnemy ? 1 : 0);
+	State = State * 2 + (pMe->IsHookGrabbed() && pMe->GetHookedPlayerID() >= 0 ? 1 : 0);
+	State = State * 2 + (pMe->IsGrounded() ? 1 : 0);
+	return clamp(State, 0, NUM_QSTATES - 1);
+}
+
+void CBotAI::EncodeNNInput(int State, float *pInput) const
+{
+	for(int i = 0; i < NUM_NN_INPUTS; i++)
+		pInput[i] = 0.0f;
+	if(State < 0 || State >= NUM_QSTATES)
+		return;
+	int DistanceBand = State >> 5;
+	pInput[DistanceBand] = 1.0f;
+	pInput[3] = (State >> 4) & 1;
+	pInput[4] = (State >> 3) & 1;
+	pInput[5] = (State >> 2) & 1;
+	pInput[6] = (State >> 1) & 1;
+	pInput[7] = State & 1;
+}
+
+void CBotAI::ForwardNN(int State, float *pHidden, float *pOutput) const
+{
+	float aInput[NUM_NN_INPUTS];
+	EncodeNNInput(State, aInput);
+	for(int h = 0; h < NUM_NN_HIDDEN; h++)
+	{
+		float Sum = m_aNNHiddenBias[h];
+		for(int i = 0; i < NUM_NN_INPUTS; i++)
+			Sum += aInput[i] * m_aNNInputHidden[i][h];
+		pHidden[h] = tanhf(Sum);
+	}
+	for(int a = 0; a < NUM_BOTACTIONS; a++)
+	{
+		float Sum = m_aNNOutputBias[a];
+		for(int h = 0; h < NUM_NN_HIDDEN; h++)
+			Sum += pHidden[h] * m_aNNHiddenOutput[h][a];
+		pOutput[a] = clamp(Sum, -100.0f, 100.0f);
+	}
+}
+
+float CBotAI::NNWeight(int Index) const
+{
+	if(Index < 0 || Index >= NUM_NN_WEIGHTS)
+		return 0.0f;
+	if(Index < NUM_NN_INPUTS * NUM_NN_HIDDEN)
+		return m_aNNInputHidden[Index / NUM_NN_HIDDEN][Index % NUM_NN_HIDDEN];
+	Index -= NUM_NN_INPUTS * NUM_NN_HIDDEN;
+	if(Index < NUM_NN_HIDDEN)
+		return m_aNNHiddenBias[Index];
+	Index -= NUM_NN_HIDDEN;
+	if(Index < NUM_NN_HIDDEN * NUM_BOTACTIONS)
+		return m_aNNHiddenOutput[Index / NUM_BOTACTIONS][Index % NUM_BOTACTIONS];
+	Index -= NUM_NN_HIDDEN * NUM_BOTACTIONS;
+	return m_aNNOutputBias[Index];
+}
+
+void CBotAI::SetNNWeight(int Index, float Value)
+{
+	if(Index < 0 || Index >= NUM_NN_WEIGHTS)
+		return;
+	Value = clamp(Value, -10.0f, 10.0f);
+	if(Index < NUM_NN_INPUTS * NUM_NN_HIDDEN)
+		m_aNNInputHidden[Index / NUM_NN_HIDDEN][Index % NUM_NN_HIDDEN] = Value;
+	else
+	{
+		Index -= NUM_NN_INPUTS * NUM_NN_HIDDEN;
+		if(Index < NUM_NN_HIDDEN)
+			m_aNNHiddenBias[Index] = Value;
+		else
+		{
+			Index -= NUM_NN_HIDDEN;
+			if(Index < NUM_NN_HIDDEN * NUM_BOTACTIONS)
+				m_aNNHiddenOutput[Index / NUM_BOTACTIONS][Index % NUM_BOTACTIONS] = Value;
+			else
+			{
+				Index -= NUM_NN_HIDDEN * NUM_BOTACTIONS;
+				m_aNNOutputBias[Index] = Value;
+			}
+		}
+	}
+	m_BrainLoaded = true;
+}
+
+void CBotAI::UpdateQ(int State, int Action, float Reward, int NextState, bool Terminal, float Alpha)
+{
+	if(State < 0 || State >= NUM_QSTATES || Action < 0 || Action >= NUM_BOTACTIONS)
+		return;
+	float aHidden[NUM_NN_HIDDEN], aOutput[NUM_BOTACTIONS];
+	ForwardNN(State, aHidden, aOutput);
+	float Next = 0.0f;
+	if(!Terminal && NextState >= 0 && NextState < NUM_QSTATES)
+	{
+		float aNextHidden[NUM_NN_HIDDEN], aNextOutput[NUM_BOTACTIONS];
+		ForwardNN(NextState, aNextHidden, aNextOutput);
+		bool HaveNext = false;
+		for(int a = 0; a < NUM_BOTACTIONS; a++)
+		{
+			if((a == BOTACT_HUNT || a == BOTACT_THROW) && !(NextState & 16))
+				continue;
+			if(a == BOTACT_RESCUE && !(NextState & 8))
+				continue;
+			if(!HaveNext || aNextOutput[a] > Next)
+			{
+				Next = aNextOutput[a];
+				HaveNext = true;
+			}
+		}
+	}
+	const float Gamma = 0.92f;
+	const float Rate = clamp(Alpha, 0.001f, 1.0f);
+	const float Target = clamp(Reward + (Terminal ? 0.0f : Gamma * Next), -100.0f, 100.0f);
+	const float Error = clamp(Target - aOutput[Action], -10.0f, 10.0f);
+	float aInput[NUM_NN_INPUTS];
+	EncodeNNInput(State, aInput);
+	for(int h = 0; h < NUM_NN_HIDDEN; h++)
+	{
+		float HiddenError = Error * m_aNNHiddenOutput[h][Action] * (1.0f - aHidden[h] * aHidden[h]);
+		m_aNNHiddenOutput[h][Action] = clamp(m_aNNHiddenOutput[h][Action] + Rate * Error * aHidden[h], -10.0f, 10.0f);
+		for(int i = 0; i < NUM_NN_INPUTS; i++)
+			m_aNNInputHidden[i][h] = clamp(m_aNNInputHidden[i][h] + Rate * HiddenError * aInput[i], -10.0f, 10.0f);
+		m_aNNHiddenBias[h] = clamp(m_aNNHiddenBias[h] + Rate * HiddenError, -10.0f, 10.0f);
+	}
+	m_aNNOutputBias[Action] = clamp(m_aNNOutputBias[Action] + Rate * Error, -10.0f, 10.0f);
+}
+
+void CBotAI::EndEpisode(float Reward, float Alpha)
+{
+	m_PendingReward += Reward;
+	if(g_Config.m_SvBotLearn && m_HasTransition)
+		UpdateQ(m_LastState, m_LastAction, m_PendingReward, 0, true, Alpha);
+	m_PendingReward = 0.0f;
+	m_HasTransition = false;
 }
 
 void CBotAI::SetWeights(const float *pWeights)
@@ -475,6 +660,8 @@ void CBotAI::RewardAction(CGameContext *pGS, int Action, float Amount)
 		return;
 
 	float Rate = g_Config.m_SvBotLearnRate / 100.0f;
+	if(m_HasTransition)
+		m_PendingReward = clamp(m_PendingReward + Amount, -100.0f, 100.0f);
 	float Delta = Amount * Rate * 0.06f;
 	float Before = m_aWeights[Action];
 
@@ -507,9 +694,8 @@ void CBotAI::RewardAction(CGameContext *pGS, int Action, float Amount)
 	}
 }
 
-// fng_trainbot: pick the habit for the next while. Weights decide, but the
-// situation vetoes: you cannot rescue nobody and you cannot throw nobody, so
-// those habits simply drop out of the draw until they make sense again.
+// Epsilon-greedy policy over neural-network action values. Rescue and combat
+// tactics are masked when their corresponding targets do not exist.
 int CBotAI::ChooseAction(CGameContext *pGS, int ClientID)
 {
 	bool aPossible[NUM_BOTACTIONS];
@@ -553,9 +739,9 @@ int CBotAI::ChooseAction(CGameContext *pGS, int ClientID)
 	if(Total <= 0.0f)
 		return BOTACT_HOLD; // nothing to do: stand where you are
 
-	// exploration: even the heaviest habit is not picked every single time,
-	// otherwise one lucky spike kill teaches the bot nothing new
-	if(frandom() < 0.15f)
+	const int State = Observation(pGS, ClientID);
+	const float Epsilon = g_Config.m_SvBotLearn ? g_Config.m_SvBotExplore / 100.0f : 0.0f;
+	if(frandom() < Epsilon)
 	{
 		int aViable[NUM_BOTACTIONS];
 		int nViable = 0;
@@ -565,14 +751,27 @@ int CBotAI::ChooseAction(CGameContext *pGS, int ClientID)
 		return aViable[nViable > 0 ? (int)(frandom() * nViable) % nViable : 0];
 	}
 
-	float Pick = frandom() * Total;
+	float aHidden[NUM_NN_HIDDEN], aQ[NUM_BOTACTIONS];
+	ForwardNN(State, aHidden, aQ);
+	float Best = -1e30f;
+	int aBest[NUM_BOTACTIONS];
+	int nBest = 0;
 	for(int i = 0; i < NUM_BOTACTIONS; i++)
 	{
-		Pick -= aW[i];
-		if(Pick <= 0.0f)
-			return i;
+		if(aW[i] <= 0.0f)
+			continue;
+		// Keep older saved tactic preferences useful alongside neural values.
+		float Q = aQ[i] + m_aWeights[i];
+		if(Q > Best + 0.0001f)
+		{
+			Best = Q;
+			nBest = 0;
+			aBest[nBest++] = i;
+		}
+		else if(fabsf(Q - Best) <= 0.0001f)
+			aBest[nBest++] = i;
 	}
-	return BOTACT_HOLD;
+	return nBest > 0 ? aBest[(int)(frandom() * nBest) % nBest] : BOTACT_HOLD;
 }
 
 
@@ -1052,6 +1251,9 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	CCharacter *pMe = pSelf->GetCharacter();
 	if(!pMe || !pMe->IsAlive())
 	{
+		// A death without a player-kill callback still ends this learning episode.
+		if(m_HasTransition)
+			EndEpisode(-1.2f, g_Config.m_SvBotLearnRate / 100.0f);
 		// re-arm the spawn init for the character that will replace this one
 		m_SpawnInitialized = false;
 		m_FireState = (m_FireState + 1) & INPUT_STATE_MASK;
@@ -1200,13 +1402,20 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		m_TargetCID = BestT;
 	}
 
-	// --- fng_trainbot: the habit we are following right now. Re-picked every
-	// few seconds from the learned weights, and only habits that make sense
-	// in this situation can win the draw (no teammate frozen -> nothing to
-	// rescue). Rewards land on this habit, so it is also what gets better.
+	// --- Choose a tactical action from the learned neural Q-network every few
+	// seconds. Actions without a valid target are masked; reward updates train
+	// the selected action for the observed state.
 	if(Tick >= m_ActionTick)
 	{
+		const int State = Observation(pGS, ClientID);
+		const float Alpha = g_Config.m_SvBotLearnRate / 100.0f;
+		if(g_Config.m_SvBotLearn && m_HasTransition)
+			UpdateQ(m_LastState, m_LastAction, m_PendingReward, State, false, Alpha);
+		m_PendingReward = 0.0f;
 		m_Action = ChooseAction(pGS, ClientID);
+		m_LastState = State;
+		m_LastAction = m_Action;
+		m_HasTransition = true;
 		m_ActionTick = Tick + pGS->Server()->TickSpeed() * (2 + (int)(frandom() * 3.0f));
 		m_ActionRewardTick = Tick;
 	}
@@ -1768,20 +1977,25 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			Dir = dx != 0.0f ? (dx > 0.0f ? -1 : 1) : m_StrafeDir; // too close: make space
 		else if(pTarget->IsFrozen())
 		{
-			// fng_trainbot: a frozen body lying on the ground is cargo, not an
-			// opponent — walk right up to it. Backing off here is exactly why
-			// the rope never touched the victim: the bot kept its distance like
-			// it was duelling somebody.
+			// fng_trainbot: a frozen body is cargo, but it is also a solid object
+			// you can climb on — and that is the pose from the screenshot: the bot
+			// balanced on top of the corpse and the rope caught him from
+			// underneath, which cannot be thrown anywhere. Two rules: never walk
+			// into the body, and step off it if we ended up on it.
 			float D = distance(MyPos, pTarget->m_Pos);
-			// the rope only catches a body it literally touches (~30px), so
-			// stopping at "rope length" 110px away means never catching anything
+			bool OnTop = pMe->IsGrounded() && pTarget->m_Pos.y > MyPos.y + 26.0f &&
+				fabsf(dx) < 44.0f;
+			// the rope only bites a body it literally touches (~30px), so stopping
+			// far away means never catching anything
 			//
-			// fng_trainbot: unless a mate has already claimed him. Then walking
-			// up is what produced the screenshot: four tees shoulder to shoulder
-			// on one corpse, none of them able to swing. Stand off and cover
-			// the throw instead of joining the queue.
-			float Stop = PreyMine ? 26.0f : 190.0f;
-			Dir = D > Stop ? (dx > 0.0f ? 1 : -1) : (D < Stop - 40.0f ? (dx > 0.0f ? -1 : 1) : 0);
+			// ... unless a mate has already claimed him. Then walking up is what
+			// produced the pile in the first place: four tees shoulder to
+			// shoulder on one corpse. Stand off and cover the throw instead.
+			float Stop = PreyMine ? 30.0f : 190.0f;
+			if(OnTop)
+				Dir = m_SwingDir ? m_SwingDir : (dx > 0.0f ? -1 : 1);
+			else
+				Dir = D > Stop ? (dx > 0.0f ? 1 : -1) : (D < Stop - 40.0f ? (dx > 0.0f ? -1 : 1) : 0);
 		}
 		else
 		{
@@ -1952,7 +2166,13 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			// Grab frozen enemy or close live enemy with hook — only when he is
 			// really inside the rope's reach
 			float d = distance(MyPos, pTarget->m_Pos);
-			bool Reach = d < HookReach && BotLineOfSight(pGS, MyPos, pTarget->m_Pos);
+			// fng_trainbot: the rope does not care what it catches and the game
+			// uses ONE state for a tee and for a wall — only m_HookedPlayer tells
+			// them apart, and it stays -1 on a block. Aiming from below catches
+			// the underside of a corpse and lifts nothing at all, so the grab is
+			// only taken from the same height or from above.
+			bool SameLevel = pTarget->m_Pos.y < MyPos.y + 60.0f;
+			bool Reach = d < HookReach && SameLevel && BotLineOfSight(pGS, MyPos, pTarget->m_Pos);
 			if(!pTarget->IsFrozen())
 				WantHook = Reach;
 			// fng_trainbot: a mate is already dragging this one — two ropes on the
@@ -2191,19 +2411,20 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	// '#2': one hold = one grab for the whole freeze. So the bot taps — release
 	// one tick, press the next — and only holds the button while a rope is
 	// actually out (flying or grabbed).
+	const int HookState = pMe->GetHookState();
+	const int HookedID = pMe->GetHookedPlayerID();
+	const bool HookOnTee = HookState == HOOK_GRABBED && HookedID >= 0;
 	if(WantHook)
 	{
-		int HookState = pMe->GetHookState();
-		int HookedID = pMe->GetHookedPlayerID();
-		// fng_trainbot: HOOK_GRABBED means "attached to *something*" — the
-		// engine uses the same state for a body and for a wall, and only
-		// m_HookedPlayer tells them apart. Holding the button on a wall grab
-		// kept the rope out for good, and the bot could never fire again, which
-		// is why it stood next to a frozen body and never picked him up: one
-		// unlucky hook into the floor and the throw tactic was dead for that
-		// spawn. So the button is held only while the rope is in the air or on
-		// a player, and tapped otherwise.
-		if(HookState == HOOK_FLYING || (HookState == HOOK_GRABBED && HookedID >= 0))
+		// fng_trainbot: HOOK_GRABBED means "attached to *something*" — the engine
+		// uses the same state for a body and for a wall, and only m_HookedPlayer
+		// tells them apart. Holding the button on a wall grab kept the rope out
+		// for good, and the bot could never fire again, which is why it stood
+		// next to a frozen body and never picked him up: one unlucky hook into
+		// the floor and the throw tactic was dead for that spawn. The button is
+		// held only while the rope is in the air or on a player, and tapped
+		// otherwise.
+		if(HookState == HOOK_FLYING || HookOnTee)
 			m_HookEmit = 1;
 		else
 			m_HookEmit = m_HookEmit ? 0 : 1; // tap: 1,0,1,0…
@@ -2288,9 +2509,12 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	{
 		char aBuf[320];
 		str_format(aBuf, sizeof(aBuf),
-			"bot %d t%d @%.0f,%.0f: goal %.0f,%.0f (%.0fpx) dir %d, hook %d, jump %d, grounded %d, act %s, target %d%s, hammer %d%s, w%d mine %d",
+			"bot %d t%d @%.0f,%.0f: goal %.0f,%.0f (%.0fpx) dir %d, hook %d%s%s, jump %d, grounded %d, act %s, target %d%s, hammer %d%s, w%d mine %d",
 			ClientID, Tick, MyPos.x, MyPos.y, Goal.x, Goal.y, distance(MyPos, Goal), Dir,
-			pMe->GetHookedPlayerID(), WantJump ? 1 : 0, pMe->IsGrounded() ? 1 : 0,
+			HookState,
+			HookOnTee ? "=TEE" : (HookState == HOOK_FLYING ? "=flying" : (HookState == HOOK_GRABBED ? "=BLOCK!" : "=idle")),
+			WantHook ? " WANT" : "",
+			WantJump ? 1 : 0, pMe->IsGrounded() ? 1 : 0,
 			CBotAI::ActionName(m_Action), m_TargetCID,
 			pTarget && pTarget->IsFrozen() ? " FROZEN" : "", m_HammerIdx,
 			HammerSwing ? " SWING" : "", pMe->GetActiveWeapon(), PreyMine ? 1 : 0);

@@ -238,6 +238,7 @@ public:
 	void SaveBotBrains();
 	void BotRewardKill(int KillerCID, int VictimCID, int Weapon);
 	void BotRewardRescue(int RescuerCID, int VictimCID);
+	void BotRewardFreeze(int FreezerCID, int VictimCID);
 	int m_BotBrainSaveTick;
 
 	// SAH: precomputed spike tiles for bot throw navigation

@@ -563,6 +563,7 @@ void CCharacter::OnHookedPlayer(CCharacter *pFrom)
 		return; // spawn protection
 
 	Freeze(g_Config.m_SvHitFreeze);
+	GameServer()->BotRewardFreeze(pHookPlayer->GetCID(), m_pPlayer->GetCID());
 	m_FreezeOwnerID = pHookPlayer->GetCID();
 	Hit(pHookPlayer->GetCID(), WEAPON_RIFLE);
 	// fng_trainbot: the hooker gloats in chat when he froze someone
@@ -1164,6 +1165,7 @@ bool CCharacter::TakeDamage(vec2 Force, int Dmg, int From, int Weapon)
 
 		if (m_InvincibleTick == 0) {
 			Freeze(g_Config.m_SvHitFreeze);
+			GameServer()->BotRewardFreeze(From, m_pPlayer->GetCID());
 			Hit(From, Weapon);
 			// fng_trainbot: the shooter gloats in chat when he froze someone
 			GameServer()->BotTauntOnFreeze(From, m_pPlayer->GetCID());

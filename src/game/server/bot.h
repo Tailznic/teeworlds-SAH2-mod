@@ -25,23 +25,30 @@ public:
 		NUM_BOTACTIONS
 	};
 	static const char *ActionName(int Action);
+	enum { NUM_QSTATES = 96, NUM_NN_INPUTS = 8, NUM_NN_HIDDEN = 12, NUM_NN_WEIGHTS = NUM_NN_INPUTS * NUM_NN_HIDDEN + NUM_NN_HIDDEN + NUM_NN_HIDDEN * NUM_BOTACTIONS + NUM_BOTACTIONS };
 
 	int GetAction() const { return m_Action; }
-	// fng_trainbot: what this bot is currently going for. The other bots read
-	// this so that four of them do not all pick the same frozen tee — one body,
-	// one thrower, and the rest go and freeze somebody else.
+	int Observation(CGameContext *pGS, int ClientID) const;
+	void UpdateQ(int State, int Action, float Reward, int NextState, bool Terminal, float Alpha);
+	void EndEpisode(float Reward, float Alpha);
+	float NNWeight(int Index) const;
+	void SetNNWeight(int Index, float Value);
+
+	// fng_trainbot: current tactical target. Other bots use it to avoid
+	// crowding the same frozen tee.
 	int GetTargetCID() const { return m_TargetCID; }
 	int GetFloorGoal() const { return m_FloorGoal; }
-	// reward for what we were doing (Amount > 0 good, < 0 bad); the weight of
-	// that habit grows or shrinks and the others drift the other way
+	// reward for what we were doing (Amount > 0 good, < 0 bad); update the
+	// legacy tactic preference and the neural network's pending reward
 	void RewardAction(CGameContext *pGS, int Action, float Amount);
-	// pick the habit to follow for the next seconds, by learned weight and
-	// what is actually possible right now
+	// pick a neural-network tactic that is currently possible
 	int ChooseAction(CGameContext *pGS, int ClientID);
 	void SetWeights(const float *pWeights);
 	float Weight(int Action) const { return m_aWeights[Action]; }
 
 private:
+	void EncodeNNInput(int State, float *pInput) const;
+	void ForwardNN(int State, float *pHidden, float *pOutput) const;
 	int m_TargetCID;      // current enemy to chase
 	int m_RetargetTick;   // next tick we may re-pick the target
 	int m_BackoffTicks;   // stepping away after a throw release
@@ -156,9 +163,17 @@ private:
 	// the weight of the habit that earned them up and the rest down, and the
 	// table is saved so the bot plays better tomorrow than today.
 	float m_aWeights[NUM_BOTACTIONS];
-	int m_Action;          // habit we are following right now
-	int m_ActionTick;      // when that habit was picked
-	int m_ActionRewardTick; // last reward we counted (no double dipping)
+	float m_aNNInputHidden[NUM_NN_INPUTS][NUM_NN_HIDDEN];
+	float m_aNNHiddenBias[NUM_NN_HIDDEN];
+	float m_aNNHiddenOutput[NUM_NN_HIDDEN][NUM_BOTACTIONS];
+	float m_aNNOutputBias[NUM_BOTACTIONS];
+	float m_PendingReward;
+	int m_LastState;
+	int m_LastAction;
+	bool m_HasTransition;
+	int m_Action;          // tactical action selected by the learned policy
+	int m_ActionTick;      // when that action expires
+	int m_ActionRewardTick;
 	bool m_BrainLoaded;
 };
 

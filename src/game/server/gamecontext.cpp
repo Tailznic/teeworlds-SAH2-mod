@@ -704,8 +704,8 @@ int CGameContext::NearestThrowTarget(vec2 Pos, float *pDist) const
 // anything afterwards.
 void CGameContext::NoteThrowRecipe(vec2 Cluster, vec2 Prey, vec2 Stand, bool Hit)
 {
-	if(m_NumBotThrowRecipes <= 0)
-		return;
+	// An empty book is the normal first-run state: let the recipe below create
+	// the first entry instead of silently discarding every initial throw.
 
 	// the same throw again? then it is the same recipe, only the score changes
 	int BestI = -1;
@@ -1518,7 +1518,20 @@ void CGameContext::BotRewardKill(int KillerCID, int VictimCID, int Weapon)
 		int Action = m_aBotAI[VictimCID].GetAction();
 		float Blame = Action == CBotAI::BOTACT_RESCUE ? -0.5f : -1.2f;
 		m_aBotAI[VictimCID].RewardAction(this, Action, Blame);
+		m_aBotAI[VictimCID].EndEpisode(0.0f, g_Config.m_SvBotLearnRate / 100.0f);
 	}
+}
+
+void CGameContext::BotRewardFreeze(int FreezerCID, int VictimCID)
+{
+	if(!g_Config.m_SvBotLearn || FreezerCID < 0 || FreezerCID >= MAX_CLIENTS || !m_aIsBot[FreezerCID])
+		return;
+	if(VictimCID < 0 || VictimCID >= MAX_CLIENTS || !m_apPlayers[FreezerCID] || !m_apPlayers[VictimCID])
+		return;
+	if(m_pController && m_pController->IsTeamplay() &&
+		m_apPlayers[FreezerCID]->GetTeam() == m_apPlayers[VictimCID]->GetTeam())
+		return;
+	m_aBotAI[FreezerCID].RewardAction(this, m_aBotAI[FreezerCID].GetAction(), 1.0f);
 }
 
 void CGameContext::BotRewardRescue(int RescuerCID, int VictimCID)
@@ -1542,10 +1555,9 @@ void CGameContext::BotRewardRescue(int RescuerCID, int VictimCID)
 	}
 }
 
-// fng_trainbot: the brain on disk. One line per slot: "bot <cid> hunt rescue
-// throw hold roam" with the learned weights. Loading happens after the bots
-// are created (creating a slot resets the table), saving on shutdown and once
-// a minute while playing.
+// Persist legacy tactic weights and the neural network parameters. Loading
+// happens after bots are created (creating a slot resets their network), and
+// saving happens on shutdown and periodically while the server is running.
 void CGameContext::LoadBotBrains()
 {
 	IStorage *pStorage = Kernel()->RequestInterface<IStorage>();
@@ -1557,7 +1569,7 @@ void CGameContext::LoadBotBrains()
 
 	// read the whole file in one go — it is a handful of lines
 	long Size = io_length(File);
-	if(Size <= 0 || Size > 64 * 1024)
+	if(Size <= 0 || Size > 2 * 1024 * 1024)
 	{
 		io_close(File);
 		return;
@@ -1572,7 +1584,7 @@ void CGameContext::LoadBotBrains()
 	while(*pLine)
 	{
 		const char *pEnd = str_find(pLine, "\n");
-		char aLine[256];
+		char aLine[512];
 		int Len = pEnd ? (int)(pEnd - pLine) : (int)str_length(pLine);
 		if(Len > 0 && Len < (int)sizeof(aLine))
 		{
@@ -1588,6 +1600,14 @@ void CGameContext::LoadBotBrains()
 					m_aBotAI[CID].SetWeights(aW);
 					Loaded++;
 				}
+			}
+			else if(str_comp_num(aLine, "nn", 2) == 0)
+			{
+				int CID = -1, Index = -1;
+				float Value = 0.0f;
+				if(sscanf(aLine + 2, "%d %d %f", &CID, &Index, &Value) == 3 &&
+					CID >= 0 && CID < MAX_CLIENTS && Index >= 0 && Index < CBotAI::NUM_NN_WEIGHTS)
+					m_aBotAI[CID].SetNNWeight(Index, Value);
 			}
 		}
 		if(!pEnd)
@@ -1625,14 +1645,20 @@ void CGameContext::SaveBotBrains()
 			m_aBotAI[i].Weight(CBotAI::BOTACT_ROAM));
 		io_write(File, aBuf, str_length(aBuf));
 		io_write_newline(File);
+		for(int Index = 0; Index < CBotAI::NUM_NN_WEIGHTS; Index++)
+		{
+			str_format(aBuf, sizeof(aBuf), "nn %d %d %.7f", i, Index, m_aBotAI[i].NNWeight(Index));
+			io_write(File, aBuf, str_length(aBuf));
+			io_write_newline(File);
+		}
 	}
 	io_close(File);
 }
 
 void CGameContext::TickBots()
 {
-	// fng_trainbot: keep the learned table on disk while the server runs, so a
-	// crash does not throw away everything the bots learned tonight
+	// Keep learned neural weights on disk periodically so a crash does not
+	// discard the bot's progress.
 	if(g_Config.m_SvBotLearn && Server()->Tick() - m_BotBrainSaveTick >= Server()->TickSpeed() * 60)
 	{
 		m_BotBrainSaveTick = Server()->Tick();
