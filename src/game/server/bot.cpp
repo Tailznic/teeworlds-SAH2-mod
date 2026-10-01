@@ -365,7 +365,6 @@ void CBotAI::Reset()
 	m_ThrowIdx = -1;
 	m_ThrowStand = vec2(0.0f, 0.0f);
 	m_ThrowTick = 0;
-	m_ThrowVictim = -1;
 	m_RegrabTarget = 0;
 	m_RegrabUntil = 0;
 	m_LastPreyCID = -1;
@@ -610,6 +609,88 @@ void CBotAI::PickNavPoint(CGameContext *pGS, vec2 MyPos, int MyTeam, int Tick, i
 	m_NavRetargetTick = Tick + 100 + (int)(frandom() * 150.0f);
 }
 
+// fng_trainbot: a frozen body somebody of ours is already working on. The
+// pile-up in the screenshot was four bots standing on one frozen tee: he is by
+// far the best-scoring target (-900 for the throw habit), so everybody picked
+// him. A mate who already hooks him, drags him or stands in hammer range has
+// claimed him, and the rest of the team must find another job — the way a real
+// team does, where one guy takes the throw and the others keep shooting.
+static bool BotBodyTaken(CGameContext *pGS, int SelfCID, int MyTeam, CCharacter *pBody, float MyDist)
+{
+	// somebody's rope is already on him
+	if(pBody->IsHookGrabbed())
+		return true;
+	CPlayer *pBodyP = pBody->GetPlayer();
+	int BodyCID = pBodyP ? pBodyP->GetCID() : -1;
+	if(BodyCID < 0)
+		return false;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(i == SelfCID)
+			continue;
+		CPlayer *p = pGS->m_apPlayers[i];
+		if(!p || p->GetTeam() != MyTeam || p->GetTeam() < TEAM_RED || p->GetTeam() > TEAM_BLUE)
+			continue;
+		CCharacter *pC = p->GetCharacter();
+		if(!pC || !pC->IsAlive())
+			continue;
+		// he is hooked to him, or standing on top of him
+		if(pC->GetHookedPlayerID() == BodyCID)
+			return true;
+		float dt = distance(pC->m_Pos, pBody->m_Pos);
+		if(dt < 140.0f && dt < MyDist)
+			return true;
+	}
+	return false;
+}
+
+// fng_trainbot: has a mate already decided to go for this slot? The proximity
+// test below only fires once somebody is actually standing on the body, so
+// four bots could all set off for the same frozen tee and only then discover
+// he is taken. Reading the other bots' own decisions reserves him the moment
+// the first one commits, which is how a squad picks its targets.
+static bool BotTargetClaimed(CGameContext *pGS, int SelfCID, int MyTeam, int CID)
+{
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(i == SelfCID)
+			continue;
+		CPlayer *p = pGS->m_apPlayers[i];
+		if(!p || p->GetTeam() != MyTeam || p->GetTeam() < TEAM_RED || p->GetTeam() > TEAM_BLUE)
+			continue;
+		if(pGS->m_aBotAI[i].GetTargetCID() == CID)
+			return true;
+	}
+	return false;
+}
+
+// fng_trainbot: how many of our team are already heading for that shelf. The
+// old floor-spread rule only counted bots that had physically *arrived*, so
+// four of them could decide to walk to the same level at the same moment and
+// then arrive shoulder to shoulder.
+static int BotTeammatesHeadingFor(CGameContext *pGS, int SelfCID, int MyTeam, int Floor)
+{
+	if(Floor < 0)
+		return 0;
+	int Num = 0;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(i == SelfCID)
+			continue;
+		CPlayer *p = pGS->m_apPlayers[i];
+		if(!p || p->GetTeam() != MyTeam || p->GetTeam() < TEAM_RED || p->GetTeam() > TEAM_BLUE)
+			continue;
+		CCharacter *pC = p->GetCharacter();
+		if(!pC || !pC->IsAlive())
+			continue;
+		// already there, or planning to go there
+		if(pGS->BotFloorAt(pC->m_Pos) == Floor ||
+			pGS->m_aBotAI[i].GetFloorGoal() == Floor)
+			Num++;
+	}
+	return Num;
+}
+
 // fng_trainbot: how far a point misses the segment a->b (the drag corridor)
 static float BotSegmentMiss(vec2 P, vec2 A, vec2 B)
 {
@@ -711,14 +792,12 @@ vec2 CBotAI::AddAimError(vec2 Aim, float Scale)
 // fng_trainbot: the throw. A tee on the hook is dragged towards whoever holds
 // the hook, so the trick is standing where a spike cluster sits on the line
 // prey -> bot. That is the whole geometry of a FNG throw.
-void CBotAI::PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, int Tick, int VictimCID)
+void CBotAI::PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, int Tick)
 {
 	m_ThrowIdx = -1;
 	// re-planning costs, and a plan that is kept for a moment walks a straight
 	// line — humans do not re-decide every tick either
 	m_ThrowTick = Tick + 10 + (int)(frandom() * 8.0f);
-	if(VictimCID >= 0)
-		m_ThrowVictim = VictimCID; // remember who this body belongs to
 	if(!g_Config.m_SvBotThrow || pGS->m_NumBotThrowTargets <= 0)
 		return;
 
@@ -996,6 +1075,12 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		m_ThrowIdx = -1;
 		m_HammerIdx = -1;
 		m_HammerVictim = -1;
+		m_HammerTick = 0;
+		m_HammerSwingTick = 0;
+		m_HammerMeasureTick = 0;
+		m_HammerMeasureCID = -1;
+		m_HammerMeasureFrom = vec2(0.0f, 0.0f);
+		m_HammerStand = vec2(0.0f, 0.0f);
 		m_RegrabTarget = 0;
 		m_RegrabUntil = 0;
 		m_LastPreyCID = -1;
@@ -1020,11 +1105,21 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	}
 
 	// --- pick a target: the habit decides who looks worth attacking ---
+	// fng_trainbot: who is already working on this body. Without this every bot
+	// scored the same frozen tee the best (he is worth 900 points!) and all four
+	// walked onto him at once — the pile-up in the screenshot. A body that a
+	// mate already hooks, drags or hammers is *his*, and the rest of us look
+	// for somebody else to freeze instead.
+	// fng_trainbot: also spread by height. All four bots chasing one frozen tee
+	// ended up on his shelf, because the floor-spread rule only looked at floors
+	// a teammate had already *reached*. Counting everybody who is heading the
+	// same way keeps two of them off the same platform.
 	if(Tick >= m_RetargetTick)
 	{
 		m_RetargetTick = Tick + 10;
 		m_TargetCID = -1;
 		float Best = 0.0f;
+		int BestT = -1;
 		for(int i = 0; i < MAX_CLIENTS; i++)
 		{
 			if(i == ClientID)
@@ -1054,12 +1149,35 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 					Score += 2500.0f;
 			}
 
-			if(m_TargetCID < 0 || Score < Best)
+			// fng_trainbot: somebody of ours is already on this body — hooked to
+			// him, dragging him or standing right next to him swinging. One body,
+			// one thrower. The penalty has to beat the frozen bonus, otherwise
+			// the pile-up is still the best-scoring option for everybody.
+			// A live enemy is never "taken": freezing him ourselves is the job.
+			if(pC->IsFrozen() && (BotTargetClaimed(pGS, ClientID, MyTeam, i) ||
+				BotBodyTaken(pGS, ClientID, MyTeam, pC, d)))
+				Score += 2200.0f;
+			// fng_trainbot: a live enemy is not "taken" (freezing him is the
+			// job), but a mate already walking at him is — one shooter per
+			// target, or the team forms a queue in front of him
+			else if(!pC->IsFrozen() && BotTargetClaimed(pGS, ClientID, MyTeam, i))
+				Score += 1200.0f;
+			// fng_trainbot: and a mate already walking towards this man's shelf
+			// is reason enough to look for a fight on a different level
+			if(pGS->m_NumBotFloors > 0)
+			{
+				int F = pGS->BotFloorAt(pC->m_Pos);
+				if(F >= 0 && BotTeammatesHeadingFor(pGS, ClientID, MyTeam, F) > 0)
+					Score += pC->IsFrozen() ? 400.0f : 700.0f;
+			}
+
+			if(BestT < 0 || Score < Best)
 			{
 				Best = Score;
-				m_TargetCID = i;
+				BestT = i;
 			}
 		}
+		m_TargetCID = BestT;
 	}
 
 	// --- fng_trainbot: the habit we are following right now. Re-picked every
@@ -1086,6 +1204,13 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		else
 			m_TargetCID = -1;
 	}
+
+	// fng_trainbot: has a mate already picked this man as his own? Claims are
+	// checked for the target as well as for a frozen body: with four bots a side
+	// the pile did not disappear, it moved — four team-mates walking at one live
+	// enemy until they stood in one heap. Same rule, same reason.
+	int TargetCID = pTarget && pTarget->GetPlayer() ? pTarget->GetPlayer()->GetCID() : -1;
+	bool TargetMine = pTarget && (TargetCID < 0 || !BotTargetClaimed(pGS, ClientID, MyTeam, TargetCID));
 
 	// --- fng_trainbot: score how unpredictably the target moves ---
 	if(pTarget)
@@ -1168,7 +1293,7 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		{
 			m_RegrabTarget = pOldC;
 			if(Tick >= m_ThrowTick)
-				PlanThrow(pGS, MyPos, pOldC->m_Pos, MyTeam, Tick, m_LastPreyCID);
+				PlanThrow(pGS, MyPos, pOldC->m_Pos, MyTeam, Tick);
 		}
 		else
 		{
@@ -1184,6 +1309,22 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	CCharacter *pPrey = pCarried;
 	if(!pPrey && pTarget && pTarget->IsAlive() && pTarget->IsFrozen())
 		pPrey = pTarget;
+
+	// fng_trainbot: is this body ours, or is a mate already elbow-deep in him?
+	// One thrower per body. Everybody else keeps shooting at live enemies,
+	// which is the whole difference between a team and a queue.
+	//
+	// fng_trainbot: the test that matters is the *claim*, not the proximity.
+	// Standing near a body was only true once somebody had already walked up,
+	// so four bots all walked up together and only then noticed the queue — the
+	// exact pile from the screenshot. Whoever picked this body as his target
+	// first owns him, and the rest keep their distance from the start.
+	float PreyDist = pPrey ? distance(MyPos, pPrey->m_Pos) : 0.0f;
+	CPlayer *pPreyP = pPrey ? pPrey->GetPlayer() : 0;
+	int PreyCID = pPreyP ? pPreyP->GetCID() : -1;
+	bool PreyMine = pPrey && !pCarried &&
+		(PreyCID < 0 || !BotTargetClaimed(pGS, ClientID, MyTeam, PreyCID)) &&
+		!BotBodyTaken(pGS, ClientID, MyTeam, pPrey, PreyDist);
 
 	// fng_trainbot: while the body is not on the hook, a hammer swing is the
 	// cheaper play — one hit launches him several hundred pixels towards the
@@ -1201,7 +1342,7 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		m_HammerVictim = -1;
 		m_HammerTick = Tick + 10;
 	}
-	bool HammerTactic = m_HammerIdx >= 0 && !pCarried && pPrey != 0 && !pMe->IsFrozen();
+	bool HammerTactic = m_HammerIdx >= 0 && !pCarried && pPrey != 0 && !pMe->IsFrozen() && PreyMine;
 	// the swing lands when the body is right in front of us (the hammer hit box
 	// is only about 35px wide) and we are on the far side of him, so the knock
 	// points at the cluster rather than away from it. Asking for the exact
@@ -1225,7 +1366,7 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	//     hooker, so we do not aim at the spikes at all — we stand where a
 	//     cluster sits on the line prey -> bot and the drag delivers him. ---
 	if(pCarried && Tick >= m_ThrowTick)
-		PlanThrow(pGS, MyPos, pCarried->m_Pos, MyTeam, Tick, pCarried->GetPlayer()->GetCID());
+		PlanThrow(pGS, MyPos, pCarried->m_Pos, MyTeam, Tick);
 
 	bool HaveSpike = pCarried && m_ThrowIdx >= 0;
 	vec2 SpikePos = HaveSpike ? pGS->m_aBotThrowTargets[m_ThrowIdx].m_Pos : MyPos;
@@ -1264,8 +1405,9 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		// frozen teammate's, roaming means a level nobody of the team holds.
 		if(m_Action == BOTACT_RESCUE)
 		{
+			// the first frozen teammate standing on a known floor wins: freeing
+			// anybody at all is worth more than freeing the nearest one
 			int RescueFloor = -1;
-			float BestR = 0.0f;
 			for(int i = 0; i < MAX_CLIENTS && RescueFloor < 0; i++)
 			{
 				if(i == ClientID)
@@ -1276,7 +1418,6 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 				CCharacter *pC = p->GetCharacter();
 				if(!pC || !pC->IsAlive() || !pC->IsFrozen())
 					continue;
-				BestR = distance(MyPos, pC->m_Pos);
 				RescueFloor = pGS->BotFloorAt(pC->m_Pos);
 			}
 			if(RescueFloor >= 0)
@@ -1415,12 +1556,10 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		}
 	}
 
-	// fng_trainbot: standing in the way is worse than standing still — when a
-	// teammate blocks our line of fire, step off the line instead of trading
-	// shots into his back. A player does it without thinking; the bot needs it
-	// written down.
-	bool StepAside = pTarget && !pTarget->IsFrozen() && !pCarried &&
-		BotTeeInLine(pGS, MyPos, pTarget->m_Pos, ClientID, pTarget);
+	// fng_trainbot: standing in the way is worse than standing still. The shot
+	// itself is gated on !BotTeeInLine below, and the engagement band below that
+	// never stands still, so the bot ends up off the line without a special
+	// rule — a bool computed here and never read is not that rule.
 
 	// --- movement: take position, never just stand there ---
 	int Dir = 0;
@@ -1517,7 +1656,14 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		else if(dy < -140.0f && hd < 700.0f)
 			Dir = hd > 40.0f ? (dx > 0.0f ? 1 : -1) : 0; // get under him
 		else if(hd > 430.0f || dy > 260.0f)
-			Dir = hd > 12.0f ? (dx > 0.0f ? 1 : -1) : 0; // close the gap / drop down
+		{
+			// fng_trainbot: close the gap — but a mate already owns this man, so
+			// stop at shooting range instead of walking into the same tile. Four
+			// bots converging on one enemy is the same pile as four bots on one
+			// frozen body, just with somebody still moving in the middle of it.
+			float StopLive = TargetMine ? 430.0f : 1050.0f;
+			Dir = hd > StopLive ? (dx > 0.0f ? 1 : -1) : 0;
+		}
 		else if(hd < 230.0f && !pTarget->IsFrozen())
 			Dir = dx != 0.0f ? (dx > 0.0f ? -1 : 1) : m_StrafeDir; // too close: make space
 		else if(pTarget->IsFrozen())
@@ -1529,12 +1675,18 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			float D = distance(MyPos, pTarget->m_Pos);
 			// the rope only catches a body it literally touches (~30px), so
 			// stopping at "rope length" 110px away means never catching anything
-			Dir = D > 26.0f ? (dx > 0.0f ? 1 : -1) : 0;
+			//
+			// fng_trainbot: unless a mate has already claimed him. Then walking
+			// up is what produced the screenshot: four tees shoulder to shoulder
+			// on one corpse, none of them able to swing. Stand off and cover
+			// the throw instead of joining the queue.
+			float Stop = PreyMine ? 26.0f : 190.0f;
+			Dir = D > Stop ? (dx > 0.0f ? 1 : -1) : (D < Stop - 40.0f ? (dx > 0.0f ? -1 : 1) : 0);
 		}
 		else
 		{
 			// engagement band: patrol left-right instead of standing still.
-			// StepAside must NOT re-roll every tick — that is not "changing
+			// The side must NOT re-roll every tick — that is not "changing
 			// sides", that is a tee vibrating on the spot. The side is chosen
 			// once and kept until the timer runs out, and even then only with
 			// a coin flip, so the walk reads as a person picking a spot.
@@ -1693,7 +1845,13 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			// Grab frozen enemy or close live enemy with hook — only when he is
 			// really inside the rope's reach
 			float d = distance(MyPos, pTarget->m_Pos);
-			if(pTarget->IsFrozen() && d < HookReach && BotLineOfSight(pGS, MyPos, pTarget->m_Pos))
+			bool Reach = d < HookReach && BotLineOfSight(pGS, MyPos, pTarget->m_Pos);
+			if(!pTarget->IsFrozen())
+				WantHook = Reach;
+			// fng_trainbot: a mate is already dragging this one — two ropes on the
+			// same body mean the two bots pull against each other and neither
+			// throw lands, so only the bot who claimed him hooks.
+			else if(PreyMine && Reach)
 			{
 				// fng_trainbot: do not grab a body we cannot turn into a spike
 				// kill. The drag lasts ~1.25s and the game drops the victim, so
@@ -1718,8 +1876,6 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 				if(WorthIt)
 					WantHook = true;
 			}
-			else if(!pTarget->IsFrozen() && d < HookReach && BotLineOfSight(pGS, MyPos, pTarget->m_Pos))
-				WantHook = true;
 		}
 		else if(!HammerTactic && m_RegrabTarget && m_RegrabTarget->IsAlive() && m_RegrabTarget->IsFrozen())
 		{
@@ -1946,31 +2102,36 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	// freezing tool, the hammer is what frees a teammate and the grenade is
 	// the answer to somebody far above.
 	int Want = WEAPON_GUN;
-	if(!pMe->HasWeapon(WEAPON_GUN))
+	// the hammer is the whole point of a hammer throw, so it is picked as soon
+	// as the plan exists — not only when the body is already in reach, which
+	// was the bug that made the tactic look broken. But not before either: in
+	// FNG the rifle is the only thing that freezes anybody, and a bot that
+	// picked up the hammer for the whole walk to the body simply stopped
+	// contributing. So the hammer comes out for the approach, and no earlier.
+	if(HammerTactic && PreyMine && PreyDist < 420.0f && pMe->HasWeapon(WEAPON_HAMMER))
+		Want = WEAPON_HAMMER;
+	// rescue next: in FNG a teammate is freed by hammering him, and that is a
+	// guaranteed point for the team, so it outranks carrying the rifle
+	else if(pHeal && pMe->HasWeapon(WEAPON_HAMMER))
+		Want = WEAPON_HAMMER;
+	else if(pMe->HasWeapon(WEAPON_RIFLE))
 	{
-		// fng_trainbot: a hammer throw is in progress — hold the hammer so the
-		// swing actually leaves the hands when the body is in range
-		if(HammerTactic && pMe->HasWeapon(WEAPON_HAMMER))
-			Want = WEAPON_HAMMER;
-		// rescue next: in FNG a teammate is freed by hammering him
-		else if(pHeal && pMe->HasWeapon(WEAPON_HAMMER))
-			Want = WEAPON_HAMMER;
-		else if(pMe->HasWeapon(WEAPON_RIFLE))
-		{
-			bool Far = pTarget && distance(MyPos, pTarget->m_Pos) > 700.0f &&
-				pTarget->m_Pos.y < MyPos.y - 300.0f;
-			if(Far && pMe->HasWeapon(WEAPON_GRENADE))
-				Want = WEAPON_GRENADE; // lob it up at the ledge above
-			else
-				Want = WEAPON_RIFLE;
-		}
+		bool Far = pTarget && distance(MyPos, pTarget->m_Pos) > 700.0f &&
+			pTarget->m_Pos.y < MyPos.y - 300.0f;
+		if(Far && pMe->HasWeapon(WEAPON_GRENADE))
+			Want = WEAPON_GRENADE; // lob it up at the ledge above
+		else
+			Want = WEAPON_RIFLE;
 	}
 	if(!pMe->HasWeapon(Want))
 		Want = pMe->GetActiveWeapon();
-	// only ask for a switch when we really hold something else, otherwise the
-	// input stream is full of no-op weapon requests
+	// fng_trainbot: the wire format is 1-based and 0 means "no request"
+	// (CCharacter::HandleWeaponSwitch does `WantedWeapon = m_WantedWeapon-1`
+	// behind an `if(m_LatestInput.m_WantedWeapon)` test). WEAPON_HAMMER is 0,
+	// so sending the raw enum asked for "nothing" and the bot could never
+	// take the hammer in his hands — it stood there swinging a rifle. Add one.
 	if(Want != pMe->GetActiveWeapon())
-		Input.m_WantedWeapon = Want;
+		Input.m_WantedWeapon = Want + 1;
 
 	// fng_trainbot: do not shove the mate we came to free, and do not stand
 	// inside him either — walking through the teammate is the single most
@@ -2007,16 +2168,16 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
 	}
 
-	if(g_Config.m_SvBotDebug && Tick % 100 == ClientID % 100)
+	if(g_Config.m_SvBotDebug && Tick % 25 == ClientID % 25)
 	{
 		char aBuf[320];
 		str_format(aBuf, sizeof(aBuf),
-			"bot %d @%.0f,%.0f: goal %.0f,%.0f (%.0fpx) dir %d, hook %d, jump %d, grounded %d, act %s, target %d%s, hammer %d%s",
-			ClientID, MyPos.x, MyPos.y, Goal.x, Goal.y, distance(MyPos, Goal), Dir,
+			"bot %d t%d @%.0f,%.0f: goal %.0f,%.0f (%.0fpx) dir %d, hook %d, jump %d, grounded %d, act %s, target %d%s, hammer %d%s, w%d mine %d",
+			ClientID, Tick, MyPos.x, MyPos.y, Goal.x, Goal.y, distance(MyPos, Goal), Dir,
 			pMe->GetHookedPlayerID(), WantJump ? 1 : 0, pMe->IsGrounded() ? 1 : 0,
 			CBotAI::ActionName(m_Action), m_TargetCID,
 			pTarget && pTarget->IsFrozen() ? " FROZEN" : "", m_HammerIdx,
-			HammerSwing ? " SWING" : "");
+			HammerSwing ? " SWING" : "", pMe->GetActiveWeapon(), PreyMine ? 1 : 0);
 		pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
 	}
 

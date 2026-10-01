@@ -27,6 +27,11 @@ public:
 	static const char *ActionName(int Action);
 
 	int GetAction() const { return m_Action; }
+	// fng_trainbot: what this bot is currently going for. The other bots read
+	// this so that four of them do not all pick the same frozen tee — one body,
+	// one thrower, and the rest go and freeze somebody else.
+	int GetTargetCID() const { return m_TargetCID; }
+	int GetFloorGoal() const { return m_FloorGoal; }
 	// reward for what we were doing (Amount > 0 good, < 0 bad); the weight of
 	// that habit grows or shrinks and the others drift the other way
 	void RewardAction(CGameContext *pGS, int Action, float Amount);
@@ -113,11 +118,10 @@ private:
 	int m_ThrowIdx;        // chosen spike cluster, -1 = no plan
 	vec2 m_ThrowStand;     // spot to stand on while dragging
 	int m_ThrowTick;       // next moment to re-plan the throw
-	int m_ThrowVictim;     // cid of the body this plan was made for, -1 = none
 	CCharacter *m_RegrabTarget; // victim we lost and must catch again
 	int m_RegrabUntil;     // keep chasing the dropped body until this tick
 	int m_LastPreyCID;     // whose body we were last dragging, -1 = none
-	void PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, int Tick, int VictimCID = -1);
+	void PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, int Tick);
 
 	// fng_trainbot: hammering the frozen prey into the spikes. The hook drops a
 	// body after ~1.25s, so dragging it all the way across a shelf often runs
