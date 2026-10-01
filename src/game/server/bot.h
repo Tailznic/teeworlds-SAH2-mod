@@ -59,6 +59,11 @@ private:
 
 	int m_CarryTicks;     // ticks the current prey has been on the hook
 	int m_GrabCount;      // how many times we actually caught somebody (debug)
+	// fng_trainbot: the engine only launches the rope when the hook button is
+	// *pressed* while the hook is idle — holding it down leaves the rope in the
+	// retracted state forever, which is why the very first grab used to be the
+	// last one. This remembers what went into m_Hook last tick so the bot taps.
+	int m_HookEmit;
 
 	// vertical navigation: hook-climb to higher platforms
 	int m_ClimbTicks;
@@ -110,7 +115,26 @@ private:
 	int m_ThrowTick;       // next moment to re-plan the throw
 	int m_ThrowVictim;     // cid of the body this plan was made for, -1 = none
 	CCharacter *m_RegrabTarget; // victim we lost and must catch again
+	int m_RegrabUntil;     // keep chasing the dropped body until this tick
+	int m_LastPreyCID;     // whose body we were last dragging, -1 = none
 	void PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, int Tick, int VictimCID = -1);
+
+	// fng_trainbot: hammering the frozen prey into the spikes. The hook drops a
+	// body after ~1.25s, so dragging it all the way across a shelf often runs
+	// out of time; the hammer instead throws the body a long way in a single
+	// hit. The bot stands on the far side of the body and smashes it towards
+	// the cluster — a second, much cheaper way to score in plain FNG.
+	int m_HammerIdx;       // spike cluster to knock the body into, -1 = none
+	int m_HammerVictim;    // cid of the body this plan is for, -1 = none
+	int m_HammerTick;      // next moment to re-plan the hammer throw
+	int m_HammerSwingTick; // last tick we logged an actual swing (debug)
+	// fng_trainbot: measuring how far a real swing throws a body — the hammer
+	// fling is what decides which clusters are worth aiming at
+	int m_HammerMeasureTick;
+	int m_HammerMeasureCID;
+	vec2 m_HammerMeasureFrom;
+	vec2 m_HammerStand;    // spot on the far side of the body
+	void PlanHammer(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, int Tick, int VictimCID = -1);
 
 	// fng_trainbot: the learned part. Every habit has a weight, rewards push
 	// the weight of the habit that earned them up and the rest down, and the

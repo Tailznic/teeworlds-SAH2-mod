@@ -446,6 +446,7 @@ set(EXPECTED_DATA
   maps/4TeamsFNG.map
   maps/4TeamsFNG_random.map
   maps/AliveFNG.map
+  maps/fng.map
   maps/IIT_Edited.map
   maps/openfng5Beat.map
 )

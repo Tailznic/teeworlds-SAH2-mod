@@ -222,6 +222,25 @@ static bool BotDeadlyDrop(CGameContext *pGS, vec2 MyPos, int Dir)
 	return false;
 }
 
+// fng_trainbot: the first surface a step to the side would land on, and
+// whether that landing is harmless. Dragging a body off a ledge onto the teeth
+// below is a real FNG throw, and the deadly-drop guard would forbid exactly
+// that step — so it needs to know that *we* land somewhere safe.
+static bool BotDropIsSafe(CGameContext *pGS, vec2 MyPos, int Dir)
+{
+	CCollision *pCol = pGS->Collision();
+	float x = MyPos.x + Dir * 48.0f;
+	for(int dy = 48; dy <= 840; dy += 28)
+	{
+		int f = pCol->GetCollisionAt(x, MyPos.y + (float)dy);
+		if(f & BOT_DANGER_MASK)
+			return false; // the drop ends in the teeth
+		if(f & CCollision::COLFLAG_SOLID)
+			return true;  // harmless ground below
+	}
+	return false;
+}
+
 // hook anchor somewhere above us to pull the tee up to the higher platforms
 static bool BotFindClimbAnchor(CGameContext *pGS, vec2 From, vec2 Want, vec2 *pOut)
 {
@@ -348,6 +367,17 @@ void CBotAI::Reset()
 	m_ThrowTick = 0;
 	m_ThrowVictim = -1;
 	m_RegrabTarget = 0;
+	m_RegrabUntil = 0;
+	m_LastPreyCID = -1;
+	m_HookEmit = 0;
+	m_HammerIdx = -1;
+	m_HammerVictim = -1;
+	m_HammerTick = 0;
+	m_HammerSwingTick = 0;
+	m_HammerMeasureTick = 0;
+	m_HammerMeasureCID = -1;
+	m_HammerMeasureFrom = vec2(0.0f, 0.0f);
+	m_HammerStand = vec2(0.0f, 0.0f);
 
 	// fng_trainbot: a fresh mind — every habit is equally likely until the
 	// rewards start saying otherwise
@@ -596,6 +626,26 @@ static float BotSegmentMiss(vec2 P, vec2 A, vec2 B)
 	return length(P - (A + u * Along));
 }
 
+// fng_trainbot: where a hammer hit would send a body. The body at B is thrown
+// away from the hitter at A, so a stand point keeps the body *behind* itself
+// (between stand and cluster) only when it lies past B on the same line.
+static float BotKnockLine(vec2 P, vec2 A, vec2 B, bool *pBeyond)
+{
+	vec2 L = B - A;
+	float Len = length(L);
+	if(Len < 1.0f)
+	{
+		if(pBeyond)
+			*pBeyond = false;
+		return distance(P, A);
+	}
+	vec2 u = L * (1.0f / Len);
+	float Along = dot(P - A, u);
+	if(pBeyond)
+		*pBeyond = Along > Len; // past the body, i.e. on the far side
+	return length((P - A) - u * Along);
+}
+
 // fng_trainbot: personality. sv_bot_skill sets the table level; -1 lets every
 // bot roll its own so a server with several bots feels like a lobby of people.
 void CBotAI::RollProfile()
@@ -759,6 +809,128 @@ void CBotAI::PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, 
 	}
 	m_ThrowIdx = BestT;
 	m_ThrowStand = pGS->m_aBotNav[BestN].m_Pos;
+
+	// fng_trainbot: a nav point is only a rough spot on the right shelf. What
+	// actually decides the throw is the line prey -> cluster, extended past the
+	// cluster: the victim is dragged *along that line*, and standing a few
+	// pixels off it made the drag run parallel to the teeth and miss the kill
+	// (the log showed the body sliding past cluster 30 five pixels to the side).
+	// So snap the stand onto that line — staying on the shelf and out of the
+	// spikes, and letting a same-level spot beat one far below.
+	{
+		const CGameContext::CBotThrowTarget &BT = pGS->m_aBotThrowTargets[BestT];
+		vec2 S = m_ThrowStand;
+		if(fabsf(BT.m_Pos.y - PreyPos.y) > 2.0f)
+		{
+			float t = (S.y - PreyPos.y) / (BT.m_Pos.y - PreyPos.y);
+			if(t > 0.0f)
+			{
+				float IdealX = PreyPos.x + t * (BT.m_Pos.x - PreyPos.x);
+				float Delta = clamp(IdealX - S.x, -220.0f, 220.0f);
+				float NX = S.x + Delta;
+				if(!(pGS->Collision()->GetCollisionAt(NX, S.y) & BOT_DANGER_MASK) &&
+					!(pGS->Collision()->GetCollisionAt(NX, S.y - 24.0f) & BOT_DANGER_MASK))
+					m_ThrowStand.x = NX;
+			}
+		}
+	}
+}
+
+// fng_trainbot: the hammer throw. Where the rope drag pulls the body *through*
+// the spikes towards the bot, a hammer hit sends the body *away* from the bot,
+// so this plan wants the opposite geometry: a spot on the far side of the body
+// from the cluster, so that one swing launches him straight into the teeth.
+// The hammer reaches only ~35px and launches a body a few hundred pixels, so
+// the cluster has to be close and the line has to be reasonably clean.
+void CBotAI::PlanHammer(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, int Tick, int VictimCID)
+{
+	m_HammerIdx = -1;
+	m_HammerTick = Tick + 12 + (int)(frandom() * 10.0f);
+	if(VictimCID >= 0)
+		m_HammerVictim = VictimCID; // remember which body this is for
+	if(!g_Config.m_SvBotThrow || pGS->m_NumBotThrowTargets <= 0 || pGS->m_NumBotNav <= 0)
+		return;
+
+	float Best = 0.0f;
+	int BestT = -1;
+	vec2 BestStand = vec2(0.0f, 0.0f);
+	for(int t = 0; t < pGS->m_NumBotThrowTargets; t++)
+	{
+		const CGameContext::CBotThrowTarget &T = pGS->m_aBotThrowTargets[t];
+		if(!BotValidSpikeForTeam(T.m_Flags, MyTeam))
+			continue;
+		float dPrey = distance(PreyPos, T.m_Pos);
+		// a swing throws a body a few hundred pixels through the air; the
+		// measurement showed a sideways hit moves it rather less, so do not
+		// plan on clusters across the whole shelf
+		if(dPrey > 400.0f)
+			continue;
+		// the push is horizontal with a slight lift, so a cluster straight
+		// above or below the body cannot be aimed at, and one far under the
+		// shelf is reached only by luck
+		float dxPrey = T.m_Pos.x - PreyPos.x;
+		float dyPrey = T.m_Pos.y - PreyPos.y;
+		if(fabsf(dxPrey) < 24.0f)
+			continue;
+		if(dyPrey > 300.0f || dyPrey < -240.0f)
+			continue;
+
+		// a stand point on the far side, close to the line cluster -> body
+		for(int n = 0; n < pGS->m_NumBotNav; n += 2)
+		{
+			vec2 S = pGS->m_aBotNav[n].m_Pos;
+			float dStand = distance(MyPos, S);
+			if(dStand > 620.0f)
+				continue;
+			float dBody = distance(S, PreyPos);
+			// close enough that walking in from there still lands the swing,
+			// far enough that we do not stand on top of the body
+			if(dBody < 18.0f || dBody > 170.0f)
+				continue;
+			// the stand has to be on the *opposite* side of the body, so the
+			// swing sends him towards the cluster and not away from it
+			if((S.x - PreyPos.x) * dxPrey > 0.0f)
+				continue;
+			if(fabsf(S.x - PreyPos.x) < 14.0f)
+				continue;
+			// and roughly on the cluster -> body line, so the fling does not
+			// shoot him off the side of the cluster
+			float Miss = BotKnockLine(S, T.m_Pos, PreyPos, 0);
+			if(Miss > 130.0f)
+				continue;
+			// and standing there must not be standing in the spikes already
+			if(pGS->Collision()->GetCollisionAt(S.x, S.y) & BOT_DANGER_MASK)
+				continue;
+			if(pGS->Collision()->GetCollisionAt(S.x, S.y - 24.0f) & BOT_DANGER_MASK)
+				continue;
+
+			float Score = Miss * 0.8f + dStand * 0.6f + dPrey * 0.6f +
+				fabsf(S.y - PreyPos.y) * 0.5f +
+				BotSpikePenalty(T.m_Flags) * 0.5f + frandom() * 60.0f;
+			if(t == m_HammerIdx)
+				Score -= 140.0f; // stick with a plan that is already working
+			if(BestT < 0 || Score < Best)
+			{
+				Best = Score;
+				BestT = t;
+				BestStand = S;
+			}
+		}
+	}
+	if(BestT < 0)
+		return;
+	bool Changed = BestT != m_HammerIdx;
+	m_HammerIdx = BestT;
+	m_HammerStand = BestStand;
+	if(g_Config.m_SvBotDebug && Changed)
+	{
+		const CGameContext::CBotThrowTarget &T = pGS->m_aBotThrowTargets[BestT];
+		char aBuf[192];
+		str_format(aBuf, sizeof(aBuf),
+			"bot hammer: cluster %d at %.0f,%.0f -> stand at %.0f,%.0f",
+			BestT, T.m_Pos.x, T.m_Pos.y, BestStand.x, BestStand.y);
+		pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+	}
 }
 
 void CBotAI::Tick(CGameContext *pGS, int ClientID)
@@ -822,6 +994,12 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		m_JumpTicks = 0;
 		m_JumpCooldown = 0;
 		m_ThrowIdx = -1;
+		m_HammerIdx = -1;
+		m_HammerVictim = -1;
+		m_RegrabTarget = 0;
+		m_RegrabUntil = 0;
+		m_LastPreyCID = -1;
+		m_HookEmit = 0;
 		m_LastGrabTick = Tick;
 		RollProfile();
 		// a player has a favourite spot: remember the floor we spawn on and
@@ -956,6 +1134,8 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		if(m_CarryTicks == 0)
 		{
 			m_GrabCount++;
+			m_LastPreyCID = pCarried->GetPlayer()->GetCID();
+			m_RegrabUntil = Tick + 220;
 			if(g_Config.m_SvBotDebug)
 			{
 				char aBuf[192];
@@ -968,37 +1148,77 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			m_CarryTicks++;
 		if(m_CarryTicks == 1)
 			m_LastGrabTick = Tick;
+		// fng_trainbot: the rope lets go after ~1.25s, but the body stays
+		// frozen for the whole timer. Keep an eye on it well past the drop so
+		// the bot walks back and hooks him again instead of forgetting.
+		m_RegrabUntil = Tick + 220;
 	}
 	else
 	{
 		m_CarryTicks = 0;
-		// fng_trainbot: the game drops the body after ~1.25s, but the victim
-		// stays frozen for the whole freeze timer. A player just re-hooks him
-		// and keeps dragging; throwing the plan away here restarted the whole
-		// search every single time and the drag never got anywhere. So the
-		// plan (and the victim it was made for) is kept for a while instead.
-		if(m_ThrowIdx >= 0 && Tick < m_ThrowTick + 150 && m_ThrowVictim >= 0)
+		// fng_trainbot: the body we were dragging a moment ago is still frozen
+		// and still worth a spike. A player simply hooks him again and keeps
+		// walking; forgetting the victim here is what made a drag end after a
+		// single grab and never reach the teeth. The window does NOT depend on
+		// the throw plan being found on this very tick — the plan flickers as
+		// the geometry changes, and tying the two together killed the window.
+		CPlayer *pOld = (m_LastPreyCID >= 0 && m_LastPreyCID < MAX_CLIENTS) ? pGS->m_apPlayers[m_LastPreyCID] : 0;
+		CCharacter *pOldC = pOld ? pOld->GetCharacter() : 0;
+		if(Tick < m_RegrabUntil && pOldC && pOldC->IsAlive() && pOldC->IsFrozen() && BotIsEnemy(pSelf, pOld))
 		{
-			CPlayer *pV = m_ThrowVictim < MAX_CLIENTS ? pGS->m_apPlayers[m_ThrowVictim] : 0;
-			CCharacter *pVC = pV ? pV->GetCharacter() : 0;
-			if(pVC && pVC->IsAlive() && pVC->IsFrozen() && BotIsEnemy(pSelf, pV))
-			{
-				m_RegrabTarget = pVC; // keep him, walk back and take him again
-				if(Tick >= m_ThrowTick)
-					PlanThrow(pGS, MyPos, pVC->m_Pos, MyTeam, Tick, m_ThrowVictim);
-			}
-			else
-			{
-				m_ThrowIdx = -1;
-				m_RegrabTarget = 0;
-			}
+			m_RegrabTarget = pOldC;
+			if(Tick >= m_ThrowTick)
+				PlanThrow(pGS, MyPos, pOldC->m_Pos, MyTeam, Tick, m_LastPreyCID);
 		}
 		else
 		{
-			m_ThrowIdx = -1; // nothing to throw right now
 			m_RegrabTarget = 0;
+			m_LastPreyCID = -1;
+			m_ThrowIdx = -1; // nothing to throw right now
+			m_ThrowTick = 0;
 		}
-		m_ThrowTick = 0;
+	}
+
+	// fng_trainbot: the body we are trying to turn into a spike kill — either
+	// the one already on our hook, or a frozen enemy lying nearby.
+	CCharacter *pPrey = pCarried;
+	if(!pPrey && pTarget && pTarget->IsAlive() && pTarget->IsFrozen())
+		pPrey = pTarget;
+
+	// fng_trainbot: while the body is not on the hook, a hammer swing is the
+	// cheaper play — one hit launches him several hundred pixels towards the
+	// teeth, where the rope would have dropped him after 1.25s long before
+	// arrival. The plan is re-made every moment or so, and dropped as soon as
+	// there is no frozen enemy left to throw.
+	if(pPrey && !pCarried && g_Config.m_SvBotThrow && pPrey->GetPlayer())
+	{
+		if(m_HammerIdx < 0 || Tick >= m_HammerTick || m_HammerVictim != pPrey->GetPlayer()->GetCID())
+			PlanHammer(pGS, MyPos, pPrey->m_Pos, MyTeam, Tick, pPrey->GetPlayer()->GetCID());
+	}
+	else
+	{
+		m_HammerIdx = -1;
+		m_HammerVictim = -1;
+		m_HammerTick = Tick + 10;
+	}
+	bool HammerTactic = m_HammerIdx >= 0 && !pCarried && pPrey != 0 && !pMe->IsFrozen();
+	// the swing lands when the body is right in front of us (the hammer hit box
+	// is only about 35px wide) and we are on the far side of him, so the knock
+	// points at the cluster rather than away from it. Asking for the exact
+	// stand spot was wrong: to get in range the bot has to *leave* that spot.
+	bool HammerSwing = false;
+	if(HammerTactic)
+	{
+		float dBody = distance(MyPos, pPrey->m_Pos);
+		const CGameContext::CBotThrowTarget &HT = pGS->m_aBotThrowTargets[m_HammerIdx];
+		bool FarSide = dot(MyPos - pPrey->m_Pos, HT.m_Pos - pPrey->m_Pos) < 0.0f;
+		// and at roughly the body's own height: from a different shelf the push
+		// goes almost straight up (measured: 25px of travel) and never reaches
+		// the teeth, so the swing is only worth taking sideways-on
+		bool SameLevel = fabsf(MyPos.y - pPrey->m_Pos.y) < 46.0f;
+		if(dBody > 7.0f && dBody < 38.0f && FarSide && SameLevel &&
+			BotLineOfSight(pGS, MyPos, pPrey->m_Pos))
+			HammerSwing = true;
 	}
 
 	// --- fng_trainbot: the throw. A victim on the hook drifts towards the
@@ -1233,6 +1453,35 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	}
 	else if(Boosting)
 		Dir = m_BoostDir;
+	else if(HammerTactic)
+	{
+		// fng_trainbot: hammer throw — first get to the far side of the body so
+		// the swing points at the teeth, then step in until the hit box covers
+		// him. The moment we are on the right side the stand is forgotten (it
+		// used to be re-checked every tick, which sent the bot walking back and
+		// forth instead of ever swinging).
+		float dBody = distance(MyPos, pPrey->m_Pos);
+		const CGameContext::CBotThrowTarget &HT = pGS->m_aBotThrowTargets[m_HammerIdx];
+		bool FarSide = dot(MyPos - pPrey->m_Pos, HT.m_Pos - pPrey->m_Pos) < 0.0f;
+		float dvx = pPrey->m_Pos.x - MyPos.x;
+		if(!FarSide && distance(MyPos, m_HammerStand) > 30.0f)
+		{
+			float dxs = m_HammerStand.x - MyPos.x;
+			Dir = fabsf(dxs) > 10.0f ? (dxs > 0.0f ? 1 : -1) : 0;
+		}
+		else if(dBody > 24.0f)
+			Dir = fabsf(dvx) > 5.0f ? (dvx > 0.0f ? 1 : -1) : 0;
+		else
+			Dir = 0;
+	}
+	else if(m_RegrabTarget && m_RegrabTarget->IsAlive() && m_RegrabTarget->IsFrozen())
+	{
+		// fng_trainbot: we lost the body but he is still frozen — walk back to
+		// him and take the rope again instead of starting over somewhere else
+		float dxr = m_RegrabTarget->m_Pos.x - MyPos.x;
+		float Dr = distance(MyPos, m_RegrabTarget->m_Pos);
+		Dir = Dr > 26.0f ? (dxr > 0.0f ? 1 : -1) : 0;
+	}
 	else if(pTarget)
 	{
 		float dx = pTarget->m_Pos.x - MyPos.x;
@@ -1352,10 +1601,19 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		else if(BotDeadlyDrop(pGS, MyPos, Dir) && !(Climbing && m_ClimbingUp))
 		{
 			// fng_trainbot: the shaft guard holds unless we are hooked
-			// upwards — crossing the pit on the hook is the climb itself
-			Dir = 0;
-			if(pCarried)
-				EdgeBlocked = true;
+			// upwards — crossing the pit on the hook is the climb itself.
+			// It also stands down while a body is on the rope and the step
+			// leads down towards the throw stand: dropping off the ledge is
+			// exactly how the drag walks the prey onto the teeth of the shelf
+			// below, and the guard must not forbid the throw itself.
+			bool ThrowDescent = pCarried && HaveSpike && MyPos.y < m_ThrowStand.y - 40.0f &&
+				fabsf(MyPos.x - m_ThrowStand.x) < 240.0f && BotDropIsSafe(pGS, MyPos, Dir);
+			if(!ThrowDescent)
+			{
+				Dir = 0;
+				if(pCarried)
+					EdgeBlocked = true;
+			}
 		}
 	}
 
@@ -1427,7 +1685,10 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			WantHook = true;
 		else if(Climbing || Boosting)
 			WantHook = true;
-		else if(pTarget)
+		// fng_trainbot: during a hammer throw the rope would pull the body
+		// away from the teeth (it drifts towards the hooker), so the hammer
+		// tactic never fires the hook
+		else if(!HammerTactic && pTarget)
 		{
 			// Grab frozen enemy or close live enemy with hook — only when he is
 			// really inside the rope's reach
@@ -1460,7 +1721,7 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			else if(!pTarget->IsFrozen() && d < HookReach && BotLineOfSight(pGS, MyPos, pTarget->m_Pos))
 				WantHook = true;
 		}
-		else if(m_RegrabTarget && m_RegrabTarget->IsAlive() && m_RegrabTarget->IsFrozen())
+		else if(!HammerTactic && m_RegrabTarget && m_RegrabTarget->IsAlive() && m_RegrabTarget->IsFrozen())
 		{
 			// fng_trainbot: we lost the body mid-drag but he is still frozen —
 			// go and take him again instead of starting over with somebody else
@@ -1565,6 +1826,28 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		BotLineOfSight(pGS, MyPos, pTarget->m_Pos) &&
 		!BotTeeInLine(pGS, MyPos, pTarget->m_Pos, ClientID, pTarget))
 		WantFire = true;
+	// fng_trainbot: the hammer throw overrides the hesitation — that swing is
+	// the whole point of the current plan, and a missed one wastes the freeze
+	if(HammerSwing)
+	{
+		WantFire = true;
+		// fng_trainbot: one line per swing is what tells you whether the hammer
+		// throw ever actually leaves the hands
+		if(m_HammerMeasureTick == 0 && pPrey->GetPlayer())
+		{
+			m_HammerMeasureTick = Tick + 50;
+			m_HammerMeasureCID = pPrey->GetPlayer()->GetCID();
+			m_HammerMeasureFrom = pPrey->m_Pos;
+		}
+		if(g_Config.m_SvBotDebug && Tick - m_HammerSwingTick > 20)
+		{
+			m_HammerSwingTick = Tick;
+			char aBuf[160];
+			str_format(aBuf, sizeof(aBuf), "bot %d: HAMMER SWING at prey %.0f,%.0f -> cluster %d",
+				ClientID, pPrey->m_Pos.x, pPrey->m_Pos.y, m_HammerIdx);
+			pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+		}
+	}
 	if(WantFire)
 		m_FireState = (m_FireState + 1) & INPUT_STATE_MASK;
 	else if(m_FireState & 1)
@@ -1590,6 +1873,13 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		// error at all. The hook has to touch him within ~30px, so even a small
 		// wobble means the body is dropped and the whole throw dies here.
 		Aim = pCarried->m_Pos - MyPos;
+		HaveAim = true;
+	}
+	else if(HammerSwing)
+	{
+		// fng_trainbot: the swing has to land dead on the body — the hammer
+		// hit box is tiny, so no aim error at all here
+		Aim = pPrey->m_Pos - MyPos;
 		HaveAim = true;
 	}
 	else
@@ -1632,7 +1922,23 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 
 	Input.m_Direction = Dir;
 	Input.m_Jump = WantJump ? 1 : 0;
-	Input.m_Hook = WantHook ? 1 : 0;
+	// fng_trainbot: the engine only launches the rope on a *press* while the
+	// hook is idle; holding the button leaves it retracted (state -1) and the
+	// hook never fires again. That is why the log showed 'grab #1' and never a
+	// '#2': one hold = one grab for the whole freeze. So the bot taps — release
+	// one tick, press the next — and only holds the button while a rope is
+	// actually out (flying or grabbed).
+	if(WantHook)
+	{
+		int HookState = pMe->GetHookState();
+		if(HookState == HOOK_FLYING || HookState == HOOK_GRABBED)
+			m_HookEmit = 1;
+		else
+			m_HookEmit = m_HookEmit ? 0 : 1; // tap: 1,0,1,0…
+	}
+	else
+		m_HookEmit = 0;
+	Input.m_Hook = m_HookEmit;
 
 	// --- fng_trainbot: what to hold in hands. The hook is a button, not a
 	// weapon, so this is about the gun: in SAH there is only the pistol (it
@@ -1642,8 +1948,12 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	int Want = WEAPON_GUN;
 	if(!pMe->HasWeapon(WEAPON_GUN))
 	{
-		// rescue first: in FNG a teammate is freed by hammering him
-		if(pHeal && pMe->HasWeapon(WEAPON_HAMMER))
+		// fng_trainbot: a hammer throw is in progress — hold the hammer so the
+		// swing actually leaves the hands when the body is in range
+		if(HammerTactic && pMe->HasWeapon(WEAPON_HAMMER))
+			Want = WEAPON_HAMMER;
+		// rescue next: in FNG a teammate is freed by hammering him
+		else if(pHeal && pMe->HasWeapon(WEAPON_HAMMER))
 			Want = WEAPON_HAMMER;
 		else if(pMe->HasWeapon(WEAPON_RIFLE))
 		{
@@ -1679,15 +1989,34 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	// fng_trainbot: the trace you actually need when the bots stand still and
 	// you cannot see why — where we are, where the goal is, and whether we
 	// decided to move at all this tick
+	// fng_trainbot: report how far one swing actually threw the body, so the
+	// hammer plan can aim at clusters the fling can really reach (tuning aid)
+	if(g_Config.m_SvBotDebug && m_HammerMeasureTick > 0 && Tick >= m_HammerMeasureTick)
+	{
+		m_HammerMeasureTick = 0;
+		CPlayer *pMV = (m_HammerMeasureCID >= 0 && m_HammerMeasureCID < MAX_CLIENTS) ?
+			pGS->m_apPlayers[m_HammerMeasureCID] : 0;
+		CCharacter *pMVC = pMV ? pMV->GetCharacter() : 0;
+		char aBuf[192];
+		if(pMVC && pMVC->IsAlive())
+			str_format(aBuf, sizeof(aBuf), "bot %d: hammer threw the body %.0fpx (%.0f,%.0f -> %.0f,%.0f)",
+				ClientID, distance(m_HammerMeasureFrom, pMVC->m_Pos),
+				m_HammerMeasureFrom.x, m_HammerMeasureFrom.y, pMVC->m_Pos.x, pMVC->m_Pos.y);
+		else
+			str_format(aBuf, sizeof(aBuf), "bot %d: the hammered body is gone", ClientID);
+		pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+	}
+
 	if(g_Config.m_SvBotDebug && Tick % 100 == ClientID % 100)
 	{
 		char aBuf[320];
 		str_format(aBuf, sizeof(aBuf),
-			"bot %d @%.0f,%.0f: goal %.0f,%.0f (%.0fpx) dir %d, hook %d, jump %d, grounded %d, act %s, target %d%s",
+			"bot %d @%.0f,%.0f: goal %.0f,%.0f (%.0fpx) dir %d, hook %d, jump %d, grounded %d, act %s, target %d%s, hammer %d%s",
 			ClientID, MyPos.x, MyPos.y, Goal.x, Goal.y, distance(MyPos, Goal), Dir,
 			pMe->GetHookedPlayerID(), WantJump ? 1 : 0, pMe->IsGrounded() ? 1 : 0,
 			CBotAI::ActionName(m_Action), m_TargetCID,
-			pTarget && pTarget->IsFrozen() ? " FROZEN" : "");
+			pTarget && pTarget->IsFrozen() ? " FROZEN" : "", m_HammerIdx,
+			HammerSwing ? " SWING" : "");
 		pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
 	}
 
