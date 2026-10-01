@@ -12,6 +12,30 @@ public:
 	void Reset();
 	void Tick(CGameContext *pGameServer, int ClientID);
 
+	// fng_trainbot: what this bot decided to do lately. Everything the bot
+	// does belongs to one of these, and rewards are attached to it — that is
+	// the whole idea: the bot learns which habit actually wins games.
+	enum
+	{
+		BOTACT_HUNT = 0, // push the enemy, start the fight
+		BOTACT_RESCUE,   // go free a frozen teammate
+		BOTACT_THROW,    // drag the prey onto the spikes
+		BOTACT_HOLD,     // hold a level and cover the team
+		BOTACT_ROAM,     // walk the map looking for a game
+		NUM_BOTACTIONS
+	};
+	static const char *ActionName(int Action);
+
+	int GetAction() const { return m_Action; }
+	// reward for what we were doing (Amount > 0 good, < 0 bad); the weight of
+	// that habit grows or shrinks and the others drift the other way
+	void RewardAction(CGameContext *pGS, int Action, float Amount);
+	// pick the habit to follow for the next seconds, by learned weight and
+	// what is actually possible right now
+	int ChooseAction(CGameContext *pGS, int ClientID);
+	void SetWeights(const float *pWeights);
+	float Weight(int Action) const { return m_aWeights[Action]; }
+
 private:
 	int m_TargetCID;      // current enemy to chase
 	int m_RetargetTick;   // next tick we may re-pick the target
@@ -83,6 +107,15 @@ private:
 	vec2 m_ThrowStand;     // spot to stand on while dragging
 	int m_ThrowTick;       // next moment to re-plan the throw
 	void PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, int Tick);
+
+	// fng_trainbot: the learned part. Every habit has a weight, rewards push
+	// the weight of the habit that earned them up and the rest down, and the
+	// table is saved so the bot plays better tomorrow than today.
+	float m_aWeights[NUM_BOTACTIONS];
+	int m_Action;          // habit we are following right now
+	int m_ActionTick;      // when that habit was picked
+	int m_ActionRewardTick; // last reward we counted (no double dipping)
+	bool m_BrainLoaded;
 };
 
 #endif

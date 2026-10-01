@@ -238,6 +238,11 @@ void CGameControllerFNG2::OnCharacterSpawn(class CCharacter *pChr)
 	
 int CGameControllerFNG2::OnCharacterDeath(class CCharacter *pVictim, class CPlayer *pKiller, int Weapon)
 {
+	// fng_trainbot: every death is a lesson — the killer's habit gets the
+	// credit, the victim's habit gets the blame. Scoring below is untouched.
+	if(g_Config.m_SvBotLearn && pVictim && pKiller)
+		GameServer()->BotRewardKill(pKiller->GetCID(), pVictim->GetPlayer()->GetCID(), Weapon);
+
 	// do scoreing
 	if(!pKiller || Weapon == WEAPON_GAME)
 		return 0;

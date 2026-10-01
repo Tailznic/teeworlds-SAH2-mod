@@ -2,10 +2,13 @@
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #include <new>
 #include <base/math.h>
+#include <base/system.h>
 #include <engine/shared/config.h>
+#include <engine/storage.h>
 #include <engine/map.h>
 #include <engine/console.h>
 #include "engine/shared/protocol.h"
+#include <game/generated/protocol.h>
 #include "gamecontext.h"
 #include <game/version.h>
 #include <game/collision.h>
@@ -15,6 +18,7 @@
 #include "gamemodes/fng2boom.h"
 #include "gamemodes/fng2boomsolo.h"
 #include "gamemodes/fng2_4teams.h"
+#include "fng2define.h"
 #include <cstdint>
 
 //other gametypes(for modding without changing original sources)
@@ -991,8 +995,157 @@ void CGameContext::BotTauntOnFreeze(int FreezerCID, int VictimCID)
 	SendChat(FreezerCID, CHAT_ALL, "\xe2\x99\xbf" "ez"); // ♿ez
 }
 
+// fng_trainbot: the result of a fight, credited to the habit the bot was
+// following when it happened. This is the whole learning loop: a spike kill
+// teaches "throwing works", a death teaches "whatever I was doing, stop",
+// and the next choice is drawn from the updated weights.
+void CGameContext::BotRewardKill(int KillerCID, int VictimCID, int Weapon)
+{
+	if(!g_Config.m_SvBotLearn)
+		return;
+
+	// a spike kill is the best possible result in FNG, a plain kill is decent
+	float Amount = 0.0f;
+	if(Weapon >= WEAPON_SPIKE_NORMAL)
+		Amount = 4.0f;
+	else if(Weapon == WEAPON_RIFLE || Weapon == WEAPON_GRENADE)
+		Amount = 2.0f;
+	else if(Weapon == WEAPON_HAMMER)
+		Amount = 1.0f; // unfreezing a teammate
+
+	if(KillerCID >= 0 && KillerCID < MAX_CLIENTS && m_aIsBot[KillerCID])
+	{
+		float Mult = 1.0f;
+		// killing your own frozen teammate is the worst thing in the game
+		if(VictimCID >= 0 && VictimCID < MAX_CLIENTS && m_apPlayers[VictimCID] && m_apPlayers[KillerCID] &&
+			m_pController->IsTeamplay() && m_apPlayers[KillerCID]->GetTeam() == m_apPlayers[VictimCID]->GetTeam())
+			Mult = -2.0f;
+		m_aBotAI[KillerCID].RewardAction(this, m_aBotAI[KillerCID].GetAction(), Amount * Mult);
+	}
+
+	if(VictimCID >= 0 && VictimCID < MAX_CLIENTS && m_aIsBot[VictimCID])
+	{
+		// dying teaches the habit that was running — unless it was a rescue,
+		// that is the bravest thing a bot does and should not be punished
+		int Action = m_aBotAI[VictimCID].GetAction();
+		float Blame = Action == CBotAI::BOTACT_RESCUE ? -1.0f : -2.0f;
+		m_aBotAI[VictimCID].RewardAction(this, Action, Blame);
+	}
+}
+
+void CGameContext::BotRewardRescue(int RescuerCID, int VictimCID)
+{
+	if(!g_Config.m_SvBotLearn)
+		return;
+	if(RescuerCID < 0 || RescuerCID >= MAX_CLIENTS || !m_aIsBot[RescuerCID])
+		return;
+	m_aBotAI[RescuerCID].RewardAction(this, CBotAI::BOTACT_RESCUE, 3.0f);
+
+	if(g_Config.m_SvBotDebug)
+	{
+		char aBuf[192];
+		str_format(aBuf, sizeof(aBuf), "bot %d rescued %d (+3 for rescue)", RescuerCID, VictimCID);
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+	}
+}
+
+// fng_trainbot: the brain on disk. One line per slot: "bot <cid> hunt rescue
+// throw hold roam" with the learned weights. Loading happens after the bots
+// are created (creating a slot resets the table), saving on shutdown and once
+// a minute while playing.
+void CGameContext::LoadBotBrains()
+{
+	IStorage *pStorage = Kernel()->RequestInterface<IStorage>();
+	if(!pStorage)
+		return;
+	IOHANDLE File = pStorage->OpenFile(g_Config.m_SvBotBrainFile, IOFLAG_READ, IStorage::TYPE_SAVE);
+	if(!File)
+		return;
+
+	// read the whole file in one go — it is a handful of lines
+	long Size = io_length(File);
+	if(Size <= 0 || Size > 64 * 1024)
+	{
+		io_close(File);
+		return;
+	}
+	char *pBuf = new char[Size + 1];
+	io_read(File, pBuf, (unsigned)Size);
+	pBuf[Size] = 0;
+	io_close(File);
+
+	int Loaded = 0;
+	const char *pLine = pBuf;
+	while(*pLine)
+	{
+		const char *pEnd = str_find(pLine, "\n");
+		char aLine[256];
+		int Len = pEnd ? (int)(pEnd - pLine) : (int)str_length(pLine);
+		if(Len > 0 && Len < (int)sizeof(aLine))
+		{
+			mem_copy(aLine, pLine, Len);
+			aLine[Len] = 0;
+			if(str_comp_num(aLine, "bot", 3) == 0)
+			{
+				int CID = 0;
+				float aW[CBotAI::NUM_BOTACTIONS];
+				if(sscanf(aLine + 3, "%d %f %f %f %f %f", &CID, &aW[0], &aW[1], &aW[2], &aW[3], &aW[4]) ==
+						1 + (int)CBotAI::NUM_BOTACTIONS && CID >= 0 && CID < MAX_CLIENTS)
+				{
+					m_aBotAI[CID].SetWeights(aW);
+					Loaded++;
+				}
+			}
+		}
+		if(!pEnd)
+			break;
+		pLine = pEnd + 1;
+	}
+	delete[] pBuf;
+
+	char aBuf[192];
+	str_format(aBuf, sizeof(aBuf), "bot brains loaded: %d", Loaded);
+	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+}
+
+void CGameContext::SaveBotBrains()
+{
+	IStorage *pStorage = Kernel()->RequestInterface<IStorage>();
+	if(!pStorage)
+		return;
+	IOHANDLE File = pStorage->OpenFile(g_Config.m_SvBotBrainFile, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+	if(!File)
+	{
+		char aBuf[256];
+		str_format(aBuf, sizeof(aBuf), "bot brains: could not write '%s'", g_Config.m_SvBotBrainFile);
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+		return;
+	}
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(!m_aIsBot[i] || !m_apPlayers[i])
+			continue;
+		char aBuf[192];
+		str_format(aBuf, sizeof(aBuf), "bot %d %f %f %f %f %f", i,
+			m_aBotAI[i].Weight(CBotAI::BOTACT_HUNT), m_aBotAI[i].Weight(CBotAI::BOTACT_RESCUE),
+			m_aBotAI[i].Weight(CBotAI::BOTACT_THROW), m_aBotAI[i].Weight(CBotAI::BOTACT_HOLD),
+			m_aBotAI[i].Weight(CBotAI::BOTACT_ROAM));
+		io_write(File, aBuf, str_length(aBuf));
+		io_write_newline(File);
+	}
+	io_close(File);
+}
+
 void CGameContext::TickBots()
 {
+	// fng_trainbot: keep the learned table on disk while the server runs, so a
+	// crash does not throw away everything the bots learned tonight
+	if(g_Config.m_SvBotLearn && Server()->Tick() - m_BotBrainSaveTick >= Server()->TickSpeed() * 60)
+	{
+		m_BotBrainSaveTick = Server()->Tick();
+		SaveBotBrains();
+	}
+
 	// fng_trainbot: heartbeat — if this line stops repeating, the world is
 	// paused or bots were never created, and everything below is dead
 	if(g_Config.m_SvBotDebug)
@@ -2763,6 +2916,9 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 	CollectBotThrowTargets();
 
 	CreateConfiguredBots();
+	// fng_trainbot: the learned habits are loaded after the bots exist - a fresh
+	// slot starts from a clean mind on purpose
+	LoadBotBrains();
 
 #ifdef CONF_DEBUG
 	if(m_Config->m_DbgDummies)
@@ -2872,6 +3028,9 @@ void CGameContext::OnInit(IKernel *pKernel, IMap* pMap, CConfiguration* pConfigF
 	CollectBotThrowTargets();
 
 	CreateConfiguredBots();
+	// fng_trainbot: the learned habits are loaded after the bots exist - a fresh
+	// slot starts from a clean mind on purpose
+	LoadBotBrains();
 
 #ifdef CONF_DEBUG
 	if(m_Config->m_DbgDummies)
@@ -2887,6 +3046,8 @@ void CGameContext::OnInit(IKernel *pKernel, IMap* pMap, CConfiguration* pConfigF
 void CGameContext::OnShutdown()
 {
 	// SAH: bots are not engine clients — free them explicitly before reset
+	if(g_Config.m_SvBotLearn)
+		SaveBotBrains(); // fng_trainbot: keep what they learned
 	for(int i = 0; i < MAX_CLIENTS; i++)
 		if(m_aIsBot[i])
 			RemoveBot(i, false);

@@ -65,6 +65,10 @@ MACRO_CONFIG_INT(SvBotCount, sv_bot_count, 1, 0, 16, CFGFLAG_SERVER, "SAH: ск�
 MACRO_CONFIG_STR(SvBotName, sv_bot_name, 16, "Bot", CFGFLAG_SERVER, "SAH: имя бота")
 // fng_trainbot: bot gloats in chat when it freezes someone
 MACRO_CONFIG_INT(SvBotTaunt, sv_bot_taunt, 1, 0, 1, CFGFLAG_SERVER, "BOT: бот пишёт в чат при заморозке врага (1=вкл)")
+// fng_trainbot: rewards + self-learning (the bot teaches itself which habit wins)
+MACRO_CONFIG_INT(SvBotLearn, sv_bot_learn, 1, 0, 1, CFGFLAG_SERVER, "BOT: самообучение — веса привычек пересчитываются по наградам (1=вкл)")
+MACRO_CONFIG_INT(SvBotLearnRate, sv_bot_learn_rate, 20, 1, 100, CFGFLAG_SERVER, "BOT: скорость обучения 1..100 (насколько сильно награда меняет веса)")
+MACRO_CONFIG_STR(SvBotBrainFile, sv_bot_brain_file, 64, "bot_brain.txt", CFGFLAG_SERVER, "BOT: файл с выученными весами (в папке сохранения)")
 // fng_trainbot: how human the practice bot plays
 MACRO_CONFIG_INT(SvBotSkill, sv_bot_skill, -1, -1, 100, CFGFLAG_SERVER, "BOT: точность 0..100 (-1 = каждому боту свой случайный уровень; 100 = всегда попадает идеально)")
 MACRO_CONFIG_INT(SvBotThrow, sv_bot_throw, 1, 0, 1, CFGFLAG_SERVER, "BOT: закидывать зафризных в шипы (1=вкл — бот встаёт так, чтобы шипы легли на линию «жертва→бот» и затаскивает хуком)")

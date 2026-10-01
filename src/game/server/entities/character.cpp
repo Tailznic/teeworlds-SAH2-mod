@@ -491,6 +491,8 @@ void CCharacter::Unfreeze(int pPlayerID) {
 	m_Killer.m_KillerID = m_pPlayer->GetCID();
 
 	if (pPlayerID != -1) {
+		// fng_trainbot: a rescue is worth more than a kill in a team game
+		GameServer()->BotRewardRescue(pPlayerID, m_pPlayer->GetCID());
 		int ModeSpecial = GameServer()->m_pController->OnCharacterDeath(this, GameServer()->m_apPlayers[pPlayerID], WEAPON_HAMMER);
 		// send the kill message
 		CNetMsg_Sv_KillMsg Msg;

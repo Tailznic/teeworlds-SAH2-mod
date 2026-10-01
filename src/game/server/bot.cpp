@@ -329,12 +329,147 @@ void CBotAI::Reset()
 	m_ThrowIdx = -1;
 	m_ThrowStand = vec2(0.0f, 0.0f);
 	m_ThrowTick = 0;
+
+	// fng_trainbot: a fresh mind — every habit is equally likely until the
+	// rewards start saying otherwise
+	for(int i = 0; i < NUM_BOTACTIONS; i++)
+		m_aWeights[i] = 1.0f / (float)NUM_BOTACTIONS;
+	m_Action = BOTACT_HUNT;
+	m_ActionTick = 0;
+	m_ActionRewardTick = 0;
+	m_BrainLoaded = false;
 }
 
-// fng_trainbot: pick the next patrol point — own side favoured, the mid
-// band (fight zone) preferred, the high platforms and the enemy half only
-// visited now and then; jitter so no two walks are the same. FloorPref, when
-// given, keeps the bot on the floor it decided to work on.
+void CBotAI::SetWeights(const float *pWeights)
+{
+	if(!pWeights)
+		return;
+	float Sum = 0.0f;
+	for(int i = 0; i < NUM_BOTACTIONS; i++)
+	{
+		m_aWeights[i] = clamp(pWeights[i], 0.01f, 2.0f);
+		Sum += m_aWeights[i];
+	}
+	if(Sum <= 0.0f)
+		return;
+	for(int i = 0; i < NUM_BOTACTIONS; i++)
+		m_aWeights[i] /= Sum; // weights are compared against each other only
+	m_BrainLoaded = true;
+}
+
+const char *CBotAI::ActionName(int Action)
+{
+	switch(Action)
+	{
+	case BOTACT_HUNT: return "hunt";
+	case BOTACT_RESCUE: return "rescue";
+	case BOTACT_THROW: return "throw";
+	case BOTACT_HOLD: return "hold";
+	default: return "roam";
+	}
+}
+
+// fng_trainbot: the reward. Whatever habit the bot was following when the
+// result arrived gets the credit or the blame; every other habit drifts the
+// other way, so the table slowly concentrates on what actually works. Weights
+// are kept inside 0.05..0.95 — a bot that decides once and never changes its
+// mind is just as dumb as one that never decides at all.
+void CBotAI::RewardAction(CGameContext *pGS, int Action, float Amount)
+{
+	if(!g_Config.m_SvBotLearn || !pGS || Action < 0 || Action >= NUM_BOTACTIONS)
+		return;
+
+	float Rate = g_Config.m_SvBotLearnRate / 100.0f;
+	float Delta = Amount * Rate * 0.08f;
+	float Before = m_aWeights[Action];
+
+	m_aWeights[Action] = clamp(m_aWeights[Action] + Delta, 0.05f, 0.95f);
+	float Others = (1.0f - m_aWeights[Action]) / (float)(NUM_BOTACTIONS - 1);
+	for(int i = 0; i < NUM_BOTACTIONS; i++)
+		if(i != Action)
+			m_aWeights[i] = clamp(mix(m_aWeights[i], Others, 0.12f), 0.05f, 0.95f);
+
+	if(g_Config.m_SvBotDebug && fabsf(m_aWeights[Action] - Before) > 0.001f)
+	{
+		char aBuf[224];
+		str_format(aBuf, sizeof(aBuf),
+			"bot learns: %s %+.1f -> %.3f (hunt %.2f rescue %.2f throw %.2f hold %.2f roam %.2f)",
+			ActionName(Action), Amount, m_aWeights[Action],
+			m_aWeights[BOTACT_HUNT], m_aWeights[BOTACT_RESCUE], m_aWeights[BOTACT_THROW],
+			m_aWeights[BOTACT_HOLD], m_aWeights[BOTACT_ROAM]);
+		pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+	}
+}
+
+// fng_trainbot: pick the habit for the next while. Weights decide, but the
+// situation vetoes: you cannot rescue nobody and you cannot throw nobody, so
+// those habits simply drop out of the draw until they make sense again.
+int CBotAI::ChooseAction(CGameContext *pGS, int ClientID)
+{
+	bool aPossible[NUM_BOTACTIONS];
+	CPlayer *pSelf = pGS->m_apPlayers[ClientID];
+	if(!pSelf)
+		return BOTACT_HOLD;
+
+	bool FrozenTeammate = false;
+	bool Enemy = false;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(i == ClientID)
+			continue;
+		CPlayer *p = pGS->m_apPlayers[i];
+		if(!p)
+			continue;
+		CCharacter *pC = p->GetCharacter();
+		if(!pC || !pC->IsAlive())
+			continue;
+		if(p->GetTeam() == pSelf->GetTeam())
+		{
+			if(pC->IsFrozen())
+				FrozenTeammate = true;
+		}
+		else
+			Enemy = true;
+	}
+
+	aPossible[BOTACT_HUNT] = Enemy;
+	aPossible[BOTACT_RESCUE] = FrozenTeammate;
+	aPossible[BOTACT_THROW] = Enemy;   // needs a victim to grab
+	aPossible[BOTACT_HOLD] = true;
+	aPossible[BOTACT_ROAM] = true;
+	float Total = 0.0f;
+	float aW[NUM_BOTACTIONS];
+	for(int i = 0; i < NUM_BOTACTIONS; i++)
+	{
+		aW[i] = aPossible[i] ? m_aWeights[i] : 0.0f;
+		Total += aW[i];
+	}
+	if(Total <= 0.0f)
+		return BOTACT_HOLD; // nothing to do: stand where you are
+
+	// exploration: even the heaviest habit is not picked every single time,
+	// otherwise one lucky spike kill teaches the bot nothing new
+	if(frandom() < 0.15f)
+	{
+		int aViable[NUM_BOTACTIONS];
+		int nViable = 0;
+		for(int i = 0; i < NUM_BOTACTIONS; i++)
+			if(aW[i] > 0.0f)
+				aViable[nViable++] = i;
+		return aViable[nViable > 0 ? (int)(frandom() * nViable) % nViable : 0];
+	}
+
+	float Pick = frandom() * Total;
+	for(int i = 0; i < NUM_BOTACTIONS; i++)
+	{
+		Pick -= aW[i];
+		if(Pick <= 0.0f)
+			return i;
+	}
+	return BOTACT_HOLD;
+}
+
+
 void CBotAI::PickNavPoint(CGameContext *pGS, vec2 MyPos, int MyTeam, int Tick, int FloorPref)
 {
 	if(pGS->m_NumBotNav <= 0)
@@ -656,6 +791,17 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		}
 	}
 
+	// --- fng_trainbot: the habit we are following right now. Re-picked every
+	// few seconds from the learned weights, and only habits that make sense
+	// in this situation can win the draw (no teammate frozen -> nothing to
+	// rescue). Rewards land on this habit, so it is also what gets better.
+	if(Tick >= m_ActionTick)
+	{
+		m_Action = ChooseAction(pGS, ClientID);
+		m_ActionTick = Tick + pGS->Server()->TickSpeed() * (2 + (int)(frandom() * 3.0f));
+		m_ActionRewardTick = Tick;
+	}
+
 	CCharacter *pTarget = 0;
 	if(m_TargetCID >= 0)
 	{
@@ -763,7 +909,33 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		// constantly rather than committing to one shelf forever
 		m_FloorTicks = 30 + (int)(frandom() * 60.0f);
 		float Roam = clamp(g_Config.m_SvBotRoam / 100.0f, 0.0f, 1.0f);
-		if(TargetFloor >= 0)
+
+		// fng_trainbot: the learned habit decides where "there" is. Hunting
+		// means the enemy's shelf, holding means our own, rescuing means the
+		// frozen teammate's, roaming means a level nobody of the team holds.
+		if(m_Action == BOTACT_RESCUE)
+		{
+			int RescueFloor = -1;
+			float BestR = 0.0f;
+			for(int i = 0; i < MAX_CLIENTS && RescueFloor < 0; i++)
+			{
+				if(i == ClientID)
+					continue;
+				CPlayer *p = pGS->m_apPlayers[i];
+				if(!p || p->GetTeam() != MyTeam)
+					continue;
+				CCharacter *pC = p->GetCharacter();
+				if(!pC || !pC->IsAlive() || !pC->IsFrozen())
+					continue;
+				BestR = distance(MyPos, pC->m_Pos);
+				RescueFloor = pGS->BotFloorAt(pC->m_Pos);
+			}
+			if(RescueFloor >= 0)
+				m_FloorGoal = RescueFloor;
+		}
+		else if(m_Action == BOTACT_HOLD && m_HomeFloor >= 0)
+			m_FloorGoal = m_HomeFloor; // stand our ground instead of roaming
+		else if(TargetFloor >= 0)
 			m_FloorGoal = TargetFloor; // go where the fight is
 		else if(pGS->m_NumBotFloors > 0 && MyFloor == m_FloorGoal &&
 			frandom() < 0.15f + Roam * 0.6f)

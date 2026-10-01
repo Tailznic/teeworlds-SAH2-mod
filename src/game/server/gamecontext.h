@@ -230,6 +230,16 @@ public:
 	int m_aBotTauntTick[MAX_CLIENTS];
 	void BotTauntOnFreeze(int FreezerCID, int VictimCID);
 
+	// fng_trainbot: rewards and the brain behind them. Every bot keeps a weight
+	// per habit, the result of a fight is credited to the habit that was
+	// running, and the table is written to disk so the bots keep learning
+	// between restarts.
+	void LoadBotBrains();
+	void SaveBotBrains();
+	void BotRewardKill(int KillerCID, int VictimCID, int Weapon);
+	void BotRewardRescue(int RescuerCID, int VictimCID);
+	int m_BotBrainSaveTick;
+
 	// SAH: precomputed spike tiles for bot throw navigation
 	enum { MAX_BOT_SPIKES = 2048 };
 	struct CBotSpike
