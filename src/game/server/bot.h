@@ -58,6 +58,7 @@ private:
 	int m_StrafeTicks;
 
 	int m_CarryTicks;     // ticks the current prey has been on the hook
+	int m_GrabCount;      // how many times we actually caught somebody (debug)
 
 	// vertical navigation: hook-climb to higher platforms
 	int m_ClimbTicks;
@@ -107,7 +108,9 @@ private:
 	int m_ThrowIdx;        // chosen spike cluster, -1 = no plan
 	vec2 m_ThrowStand;     // spot to stand on while dragging
 	int m_ThrowTick;       // next moment to re-plan the throw
-	void PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, int Tick);
+	int m_ThrowVictim;     // cid of the body this plan was made for, -1 = none
+	CCharacter *m_RegrabTarget; // victim we lost and must catch again
+	void PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, int Tick, int VictimCID = -1);
 
 	// fng_trainbot: the learned part. Every habit has a weight, rewards push
 	// the weight of the habit that earned them up and the rest down, and the

@@ -1,4 +1,4 @@
-/* fng_trainbot: server-side practice bot — feeds CNetObj_PlayerInput for a
+﻿/* fng_trainbot: server-side practice bot — feeds CNetObj_PlayerInput for a
    slot that has no network client behind it (see CGameContext::CreateBot). */
 #include <base/math.h>
 #include <base/vmath.h>
@@ -177,14 +177,21 @@ static bool BotDeadlyDrop(CGameContext *pGS, vec2 MyPos, int Dir)
 {
 	CCollision *pCol = pGS->Collision();
 	float x = MyPos.x + Dir * 52.0f;
-	if(pCol->GetCollisionAt(x, MyPos.y + 30.0f) & CCollision::COLFLAG_SOLID)
-		return false; // ground continues under the next step
 
-	// Central lethal shaft protection: stepping into the open pit (X 3920..4600 below Y 1850)
-	// without solid ground underfoot is almost always fatal unless hooked
-	float CenterX = (pCol->GetWidth() * 32.0f) * 0.5f;
-	if(fabsf(x - CenterX) < 420.0f && MyPos.y > 1850.0f)
-		return true;
+	// fng_trainbot: is there actually ground one step ahead? A tee stands with
+	// its feet ~28px below the centre, so the floor is probed at a few depths
+	// instead of one exact tile that may fall into a gap between two floors.
+	for(int p = 0; p < 3; p++)
+		if(pCol->GetCollisionAt(x, MyPos.y + 24.0f + (float)p * 10.0f) & CCollision::COLFLAG_SOLID)
+			return false; // ground continues under the next step
+
+	// fng_trainbot: this used to contain a blanket "central shaft" rule that
+	// returned true for any position near the middle of the map below y=1850,
+	// regardless of whether there was a floor underfoot. Effect: every bot that
+	// walked into the middle of AliveFNG froze on the spot forever (the log
+	// showed "dir 0" with a target 500px away) — they could neither approach
+	// a frozen victim nor hook it. The real question is only "what is down
+	// there", so that is all this function checks now.
 
 	// Deep vertical scan (up to 840 px / 26 tiles down)
 	for(int dy = 48; dy <= 840; dy += 28)
@@ -310,6 +317,7 @@ void CBotAI::Reset()
 	m_StrafeDir = 1;
 	m_StrafeTicks = 0;
 	m_CarryTicks = 0;
+	m_GrabCount = 0;
 	m_ClimbTicks = 0;
 	m_ClimbDir = 0;
 	m_ClimbAnchorTick = 0;
@@ -338,6 +346,8 @@ void CBotAI::Reset()
 	m_ThrowIdx = -1;
 	m_ThrowStand = vec2(0.0f, 0.0f);
 	m_ThrowTick = 0;
+	m_ThrowVictim = -1;
+	m_RegrabTarget = 0;
 
 	// fng_trainbot: a fresh mind — every habit is equally likely until the
 	// rewards start saying otherwise
@@ -651,12 +661,14 @@ vec2 CBotAI::AddAimError(vec2 Aim, float Scale)
 // fng_trainbot: the throw. A tee on the hook is dragged towards whoever holds
 // the hook, so the trick is standing where a spike cluster sits on the line
 // prey -> bot. That is the whole geometry of a FNG throw.
-void CBotAI::PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, int Tick)
+void CBotAI::PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, int Tick, int VictimCID)
 {
 	m_ThrowIdx = -1;
 	// re-planning costs, and a plan that is kept for a moment walks a straight
 	// line — humans do not re-decide every tick either
 	m_ThrowTick = Tick + 10 + (int)(frandom() * 8.0f);
+	if(VictimCID >= 0)
+		m_ThrowVictim = VictimCID; // remember who this body belongs to
 	if(!g_Config.m_SvBotThrow || pGS->m_NumBotThrowTargets <= 0)
 		return;
 
@@ -671,7 +683,12 @@ void CBotAI::PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, 
 		if(!BotValidSpikeForTeam(T.m_Flags, MyTeam))
 			continue;
 		float d = distance(PreyPos, T.m_Pos);
-		if(d > 1100.0f)
+		// fng_trainbot: the game drops a grabbed tee after about 1.25s, so a
+		// cluster further away than that can never be reached — the bot used
+		// to grab the victim first and then discover the spikes were out of
+		// reach, which is why it caught bodies and never scored. Only clusters
+		// the drag can actually cover are worth planning.
+		if(d > 850.0f)
 			continue;
 		float s = d + BotSpikePenalty(T.m_Flags);
 		int p = NumCand;
@@ -936,6 +953,17 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	// a burst of grabs. Remember the tick every fresh grab started.
 	if(pCarried)
 	{
+		if(m_CarryTicks == 0)
+		{
+			m_GrabCount++;
+			if(g_Config.m_SvBotDebug)
+			{
+				char aBuf[192];
+				str_format(aBuf, sizeof(aBuf), "bot %d: grabbed prey at %.0f,%.0f (grab #%d)",
+					pSelf->GetCID(), pCarried->m_Pos.x, pCarried->m_Pos.y, m_GrabCount);
+				pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+			}
+		}
 		if(m_CarryTicks < 100000)
 			m_CarryTicks++;
 		if(m_CarryTicks == 1)
@@ -944,7 +972,32 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	else
 	{
 		m_CarryTicks = 0;
-		m_ThrowIdx = -1; // nothing to throw right now
+		// fng_trainbot: the game drops the body after ~1.25s, but the victim
+		// stays frozen for the whole freeze timer. A player just re-hooks him
+		// and keeps dragging; throwing the plan away here restarted the whole
+		// search every single time and the drag never got anywhere. So the
+		// plan (and the victim it was made for) is kept for a while instead.
+		if(m_ThrowIdx >= 0 && Tick < m_ThrowTick + 150 && m_ThrowVictim >= 0)
+		{
+			CPlayer *pV = m_ThrowVictim < MAX_CLIENTS ? pGS->m_apPlayers[m_ThrowVictim] : 0;
+			CCharacter *pVC = pV ? pV->GetCharacter() : 0;
+			if(pVC && pVC->IsAlive() && pVC->IsFrozen() && BotIsEnemy(pSelf, pV))
+			{
+				m_RegrabTarget = pVC; // keep him, walk back and take him again
+				if(Tick >= m_ThrowTick)
+					PlanThrow(pGS, MyPos, pVC->m_Pos, MyTeam, Tick, m_ThrowVictim);
+			}
+			else
+			{
+				m_ThrowIdx = -1;
+				m_RegrabTarget = 0;
+			}
+		}
+		else
+		{
+			m_ThrowIdx = -1; // nothing to throw right now
+			m_RegrabTarget = 0;
+		}
 		m_ThrowTick = 0;
 	}
 
@@ -952,7 +1005,7 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	//     hooker, so we do not aim at the spikes at all — we stand where a
 	//     cluster sits on the line prey -> bot and the drag delivers him. ---
 	if(pCarried && Tick >= m_ThrowTick)
-		PlanThrow(pGS, MyPos, pCarried->m_Pos, MyTeam, Tick);
+		PlanThrow(pGS, MyPos, pCarried->m_Pos, MyTeam, Tick, pCarried->GetPlayer()->GetCID());
 
 	bool HaveSpike = pCarried && m_ThrowIdx >= 0;
 	vec2 SpikePos = HaveSpike ? pGS->m_aBotThrowTargets[m_ThrowIdx].m_Pos : MyPos;
@@ -1053,11 +1106,15 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	// five seconds what level it thinks it is on and what it is doing about it
 	if(g_Config.m_SvBotDebug && Tick % 100 == ClientID % 100)
 	{
-		char aBuf[256];
+		char aBuf[320];
+		int Hooked = pMe->GetHookedPlayerID();
+		float DistTo = pTarget ? distance(MyPos, pTarget->m_Pos) : -1.0f;
 		str_format(aBuf, sizeof(aBuf),
-			"bot %d: here %d, working %d (home %d, enemy %d), target %d%s, carry %d, trap %d",
+			"bot %d: here %d, working %d (home %d, enemy %d), target %d%s, carry %d, trap %d, hook %d%s, dist %.0f, act %s",
 			ClientID, MyFloor, m_FloorGoal, m_HomeFloor, TargetFloor, m_TargetCID,
-			m_ClimbTicks > 0 ? " climbing" : "", m_CarryTicks, m_ThrowIdx);
+			m_ClimbTicks > 0 ? " climbing" : "", m_CarryTicks, m_ThrowIdx, Hooked,
+			pTarget && pTarget->IsFrozen() ? " FROZEN" : "", DistTo,
+			CBotAI::ActionName(m_Action));
 		pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
 	}
 
@@ -1187,7 +1244,13 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		// already holds his shelf we take the one above or below, otherwise the
 		// whole team ends up shoulder to shoulder on one floor.
 		int ChaseFloor = TargetFloor;
-		if(m_FloorGoal >= 0 && m_FloorGoal != TargetFloor &&
+		float DTarget = distance(MyPos, pTarget->m_Pos);
+		// fng_trainbot: spreading the team over neighbouring shelves only makes
+		// sense once the fight is joined. Applied while still walking to the
+		// enemy it did the opposite: everybody left for a different level and
+		// nobody ever arrived (the log showed distances of 765..3500px and a
+		// hook that never touched anybody).
+		if(DTarget < 700.0f && m_FloorGoal >= 0 && m_FloorGoal != TargetFloor &&
 			BotTeammatesOnFloor(pGS, ClientID, MyTeam, TargetFloor) > 0)
 			ChaseFloor = m_FloorGoal;
 		bool OtherFloor = ChaseFloor >= 0 && MyFloor >= 0 && ChaseFloor != MyFloor;
@@ -1206,8 +1269,19 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			Dir = hd > 40.0f ? (dx > 0.0f ? 1 : -1) : 0; // get under him
 		else if(hd > 430.0f || dy > 260.0f)
 			Dir = hd > 12.0f ? (dx > 0.0f ? 1 : -1) : 0; // close the gap / drop down
-		else if(hd < 230.0f)
+		else if(hd < 230.0f && !pTarget->IsFrozen())
 			Dir = dx != 0.0f ? (dx > 0.0f ? -1 : 1) : m_StrafeDir; // too close: make space
+		else if(pTarget->IsFrozen())
+		{
+			// fng_trainbot: a frozen body lying on the ground is cargo, not an
+			// opponent — walk right up to it. Backing off here is exactly why
+			// the rope never touched the victim: the bot kept its distance like
+			// it was duelling somebody.
+			float D = distance(MyPos, pTarget->m_Pos);
+			// the rope only catches a body it literally touches (~30px), so
+			// stopping at "rope length" 110px away means never catching anything
+			Dir = D > 26.0f ? (dx > 0.0f ? 1 : -1) : 0;
+		}
 		else
 		{
 			// engagement band: patrol left-right instead of standing still.
@@ -1342,6 +1416,11 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	// --- hook priority: carry prey > climb/boost anchor > attack enemy ---
 	bool JustReleased = WantRelease;
 	bool WantHook = false;
+	// fng_trainbot: the hook only reaches about HookLength (380px). Firing it
+	// from 650px looked like the bot was trying and did nothing: the hook flew
+	// into the wall behind the target and retracted, so a frozen victim was
+	// never actually grabbed and the throw never started.
+	const float HookReach = 360.0f;
 	if(m_BackoffTicks <= 0 && !JustReleased)
 	{
 		if(pCarried)
@@ -1350,19 +1429,54 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			WantHook = true;
 		else if(pTarget)
 		{
-			// Grab frozen enemy or close live enemy with hook
+			// Grab frozen enemy or close live enemy with hook — only when he is
+			// really inside the rope's reach
 			float d = distance(MyPos, pTarget->m_Pos);
-			if(pTarget->IsFrozen() && d < 650.0f && BotLineOfSight(pGS, MyPos, pTarget->m_Pos))
+			if(pTarget->IsFrozen() && d < HookReach && BotLineOfSight(pGS, MyPos, pTarget->m_Pos))
+			{
+				// fng_trainbot: do not grab a body we cannot turn into a spike
+				// kill. The drag lasts ~1.25s and the game drops the victim, so
+				// catching somebody with no reachable spikes is pure waste: it
+				// spends the freeze window, blocks our own lane of fire and
+				// teaches nothing. Only take the bait when spikes are in range.
+				bool WorthIt = !g_Config.m_SvBotThrow || pGS->m_NumBotThrowTargets <= 0;
+				if(!WorthIt)
+				{
+					float Nearest = 1e9f;
+					for(int t = 0; t < pGS->m_NumBotThrowTargets; t++)
+					{
+						const CGameContext::CBotThrowTarget &T = pGS->m_aBotThrowTargets[t];
+						if(!BotValidSpikeForTeam(T.m_Flags, MyTeam))
+							continue;
+						float ds = distance(pTarget->m_Pos, T.m_Pos);
+						if(ds < Nearest)
+							Nearest = ds;
+					}
+					WorthIt = Nearest < 850.0f;
+				}
+				if(WorthIt)
+					WantHook = true;
+			}
+			else if(!pTarget->IsFrozen() && d < HookReach && BotLineOfSight(pGS, MyPos, pTarget->m_Pos))
 				WantHook = true;
-			else if(!pTarget->IsFrozen() && d < 480.0f && BotLineOfSight(pGS, MyPos, pTarget->m_Pos))
+		}
+		else if(m_RegrabTarget && m_RegrabTarget->IsAlive() && m_RegrabTarget->IsFrozen())
+		{
+			// fng_trainbot: we lost the body mid-drag but he is still frozen —
+			// go and take him again instead of starting over with somebody else
+			float d = distance(MyPos, m_RegrabTarget->m_Pos);
+			if(d < HookReach && BotLineOfSight(pGS, MyPos, m_RegrabTarget->m_Pos))
 				WantHook = true;
 		}
 	}
 
-	// --- SAH/heals: frozen teammates are saved with pistol ---
+	// --- rescues: a frozen teammate is freed with the hammer in plain FNG and
+	// with the pistol in SAH. This used to sit behind UsesSahScoring(), so on a
+	// normal fng2 server the bots never even looked for their own frozen
+	// mates — they walked past them and kept fighting.
 	CCharacter *pHeal = 0;
 	CCharacter *pHealThreat = 0;
-	if(pGS->m_pController->UsesSahScoring() && MyTeam >= TEAM_RED && MyTeam <= TEAM_BLUE)
+	if(MyTeam >= TEAM_RED && MyTeam <= TEAM_BLUE)
 	{
 		float BestH = 0.0f;
 		for(int i = 0; i < MAX_CLIENTS; i++)
@@ -1472,9 +1586,10 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	}
 	else if(pCarried)
 	{
-		// the body is on our hook — look at him, that is all a dragging player
-		// does. A small slip is fine, a big one drops him mid-air.
-		Aim = AddAimError(pCarried->m_Pos - MyPos, 0.35f);
+		// fng_trainbot: the body is on our hook — look at him straight, no
+		// error at all. The hook has to touch him within ~30px, so even a small
+		// wobble means the body is dropped and the whole throw dies here.
+		Aim = pCarried->m_Pos - MyPos;
 		HaveAim = true;
 	}
 	else
@@ -1486,14 +1601,19 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			// where he thinks it will be. Good players lead the target, weak
 			// ones shoot late, and everyone guesses a dodge now and then.
 			vec2 A = pAim->m_Pos - MyPos;
-			if(pAim == pTarget && !pTarget->IsFrozen())
+			// ...but the moment we are going for the hook, the wobble has to go.
+			// Aiming error of up to 20 degrees is a "human" laser shot and a
+			// guaranteed miss for the rope, which is why no frozen victim was
+			// ever actually caught.
+			bool Hooking = pAim == pTarget && pTarget->IsFrozen() && !Boosting && !Climbing;
+			if(pAim == pTarget && !pTarget->IsFrozen() && !Hooking)
 			{
 				float Lead = m_Lead;
 				if(m_AimMode >= 2 && m_Predict > 0.3f)
 					Lead += m_Predict * 4.0f * (frandom() < 0.5f ? -1.0f : 1.0f);
 				A += pAim->GetVel() * (Lead - (1.0f - clamp(m_Skill, 0.0f, 1.0f)) * 6.0f);
 			}
-			Aim = AddAimError(A);
+			Aim = Hooking ? A : AddAimError(A);
 			HaveAim = true;
 		}
 		else if(HaveGoal)
@@ -1517,16 +1637,23 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	// --- fng_trainbot: what to hold in hands. The hook is a button, not a
 	// weapon, so this is about the gun: in SAH there is only the pistol (it
 	// pushes enemies and thaws teammates), in plain fng2 the rifle is the
-	// freezing tool and the grenade is the answer to somebody far above.
+	// freezing tool, the hammer is what frees a teammate and the grenade is
+	// the answer to somebody far above.
 	int Want = WEAPON_GUN;
-	if(!pMe->HasWeapon(WEAPON_GUN) && pMe->HasWeapon(WEAPON_RIFLE))
+	if(!pMe->HasWeapon(WEAPON_GUN))
 	{
-		bool Far = pTarget && distance(MyPos, pTarget->m_Pos) > 700.0f &&
-			pTarget->m_Pos.y < MyPos.y - 300.0f;
-		if(Far && pMe->HasWeapon(WEAPON_GRENADE))
-			Want = WEAPON_GRENADE; // lob it up at the ledge above
-		else
-			Want = WEAPON_RIFLE;
+		// rescue first: in FNG a teammate is freed by hammering him
+		if(pHeal && pMe->HasWeapon(WEAPON_HAMMER))
+			Want = WEAPON_HAMMER;
+		else if(pMe->HasWeapon(WEAPON_RIFLE))
+		{
+			bool Far = pTarget && distance(MyPos, pTarget->m_Pos) > 700.0f &&
+				pTarget->m_Pos.y < MyPos.y - 300.0f;
+			if(Far && pMe->HasWeapon(WEAPON_GRENADE))
+				Want = WEAPON_GRENADE; // lob it up at the ledge above
+			else
+				Want = WEAPON_RIFLE;
+		}
 	}
 	if(!pMe->HasWeapon(Want))
 		Want = pMe->GetActiveWeapon();
@@ -1534,6 +1661,35 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	// input stream is full of no-op weapon requests
 	if(Want != pMe->GetActiveWeapon())
 		Input.m_WantedWeapon = Want;
+
+	// fng_trainbot: do not shove the mate we came to free, and do not stand
+	// inside him either — walking through the teammate is the single most
+	// annoying thing a bot can do in a team game
+	if(pHeal)
+	{
+		float dxh = pHeal->m_Pos.x - MyPos.x;
+		float ad = fabsf(dxh);
+		// hammer reach is short: stop just short of him and swing
+		if(ad > 46.0f)
+			Dir = dxh > 0.0f ? 1 : -1;
+		else
+			Dir = 0;
+	}
+
+	// fng_trainbot: the trace you actually need when the bots stand still and
+	// you cannot see why — where we are, where the goal is, and whether we
+	// decided to move at all this tick
+	if(g_Config.m_SvBotDebug && Tick % 100 == ClientID % 100)
+	{
+		char aBuf[320];
+		str_format(aBuf, sizeof(aBuf),
+			"bot %d @%.0f,%.0f: goal %.0f,%.0f (%.0fpx) dir %d, hook %d, jump %d, grounded %d, act %s, target %d%s",
+			ClientID, MyPos.x, MyPos.y, Goal.x, Goal.y, distance(MyPos, Goal), Dir,
+			pMe->GetHookedPlayerID(), WantJump ? 1 : 0, pMe->IsGrounded() ? 1 : 0,
+			CBotAI::ActionName(m_Action), m_TargetCID,
+			pTarget && pTarget->IsFrozen() ? " FROZEN" : "");
+		pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+	}
 
 	pGS->OnClientDirectInput(ClientID, &Input);
 	pGS->OnClientPredictedInput(ClientID, &Input);
