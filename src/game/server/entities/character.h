@@ -93,6 +93,11 @@ public:
 	vec2 GetAimVec() const { return vec2(m_Input.m_TargetX, m_Input.m_TargetY); }
 	int GetLastAttackTick() const { return m_AttackTick; }
 
+	// fng_trainbot: weapon bookkeeping, so the bot can actually pick what to
+	// hold instead of firing whatever it happened to spawn with
+	bool HasWeapon(int Weapon) const { return Weapon >= 0 && Weapon < NUM_WEAPONS && m_aWeapons[Weapon].m_Got; }
+	int GetActiveWeapon() const { return m_ActiveWeapon; }
+
 	bool IsFrozen();
 
 	void SetKiller(int pKillerID, unsigned int pHookTicks);

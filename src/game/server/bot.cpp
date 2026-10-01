@@ -787,7 +787,7 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		}
 	}
 
-	// --- pick a target: nearest enemy, frozen prey counts as much closer ---
+	// --- pick a target: the habit decides who looks worth attacking ---
 	if(Tick >= m_RetargetTick)
 	{
 		m_RetargetTick = Tick + 10;
@@ -803,7 +803,25 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			CCharacter *pC = p->GetCharacter();
 			if(!pC || !pC->IsAlive())
 				continue;
-			float Score = distance(MyPos, pC->m_Pos) - (pC->IsFrozen() ? 600.0f : 0.0f);
+			float d = distance(MyPos, pC->m_Pos);
+			float Score = d - (pC->IsFrozen() ? 600.0f : 0.0f);
+
+			// fng_trainbot: this is where the learned habit becomes visible.
+			// Before, the habit only chose a floor to walk to and the fighting
+			// itself was always identical — which is why two bots with very
+			// different weights played exactly the same game.
+			if(m_Action == BOTACT_THROW)
+				Score -= pC->IsFrozen() ? 900.0f : 250.0f; // prey first, live ones only if nothing frozen
+			else if(m_Action == BOTACT_HUNT)
+				Score -= pC->IsFrozen() ? 100.0f : 450.0f; // the point is to freeze him ourselves
+			else if(m_Action == BOTACT_HOLD)
+			{
+				// holding a spot: do not walk the whole map for a kill
+				int F = pGS->BotFloorAt(pC->m_Pos);
+				if(F >= 0 && F != m_MyFloor)
+					Score += 2500.0f;
+			}
+
 			if(m_TargetCID < 0 || Score < Best)
 			{
 				Best = Score;
@@ -1428,6 +1446,27 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	Input.m_Direction = Dir;
 	Input.m_Jump = WantJump ? 1 : 0;
 	Input.m_Hook = WantHook ? 1 : 0;
+
+	// --- fng_trainbot: what to hold in hands. The hook is a button, not a
+	// weapon, so this is about the gun: in SAH there is only the pistol (it
+	// pushes enemies and thaws teammates), in plain fng2 the rifle is the
+	// freezing tool and the grenade is the answer to somebody far above.
+	int Want = WEAPON_GUN;
+	if(!pMe->HasWeapon(WEAPON_GUN) && pMe->HasWeapon(WEAPON_RIFLE))
+	{
+		bool Far = pTarget && distance(MyPos, pTarget->m_Pos) > 700.0f &&
+			pTarget->m_Pos.y < MyPos.y - 300.0f;
+		if(Far && pMe->HasWeapon(WEAPON_GRENADE))
+			Want = WEAPON_GRENADE; // lob it up at the ledge above
+		else
+			Want = WEAPON_RIFLE;
+	}
+	if(!pMe->HasWeapon(Want))
+		Want = pMe->GetActiveWeapon();
+	// only ask for a switch when we really hold something else, otherwise the
+	// input stream is full of no-op weapon requests
+	if(Want != pMe->GetActiveWeapon())
+		Input.m_WantedWeapon = Want;
 
 	pGS->OnClientDirectInput(ClientID, &Input);
 	pGS->OnClientPredictedInput(ClientID, &Input);
