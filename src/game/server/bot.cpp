@@ -446,6 +446,32 @@ void CBotAI::Reset()
 	m_ActionTick = 0;
 	m_ActionRewardTick = 0;
 	m_BrainLoaded = false;
+	for(int i = 0; i < NUM_CONTROL_WEIGHTS; i++)
+		m_aControlWeights[i] = 0.0f;
+	// Start by following the legal planner suggestions. Output layout:
+	// move 0..2, jump off/on 3..4, fire off/on 5..6, hook off/on 7..8,
+	// weapons 9..13 and normalized aim 14..15.
+	for(int i = 0; i < 3; i++)
+		m_aControlWeights[i * NUM_CONTROL_INPUTS + i] = 2.0f;
+	const int BiasOffset = NUM_CONTROL_INPUTS * NUM_CONTROL_OUTPUTS;
+	m_aControlWeights[3 * NUM_CONTROL_INPUTS + NUM_CONTROL_INPUTS - 1] = 0.4f;
+	m_aControlWeights[4 * NUM_CONTROL_INPUTS + 3] = 2.0f;
+	m_aControlWeights[5 * NUM_CONTROL_INPUTS + NUM_CONTROL_INPUTS - 1] = 0.4f;
+	m_aControlWeights[6 * NUM_CONTROL_INPUTS + 4] = 2.0f;
+	m_aControlWeights[7 * NUM_CONTROL_INPUTS + NUM_CONTROL_INPUTS - 1] = 0.4f;
+	m_aControlWeights[8 * NUM_CONTROL_INPUTS + 5] = 2.0f;
+	m_aControlWeights[BiasOffset + 3] = 0.4f;
+	m_aControlWeights[BiasOffset + 5] = 0.4f;
+	m_aControlWeights[BiasOffset + 7] = 0.4f;
+	for(int i = 0; i < 5; i++)
+		m_aControlWeights[(9 + i) * NUM_CONTROL_INPUTS + 6 + i] = 2.0f;
+	for(int i = 0; i < NUM_CONTROL_INPUTS; i++)
+		m_aLastControlInput[i] = 0.0f;
+	for(int i = 0; i < NUM_CONTROL_OUTPUTS; i++)
+		m_aLastControlOutput[i] = 0.0f;
+	for(int i = 0; i < 5; i++)
+		m_aLastControlChoice[i] = 0;
+	m_HasControlTransition = false;
 }
 
 int CBotAI::Observation(CGameContext *pGS, int ClientID) const
@@ -480,7 +506,10 @@ int CBotAI::Observation(CGameContext *pGS, int ClientID) const
 			Nearest = min(Nearest, distance(pMe->m_Pos, pC->m_Pos));
 		}
 	}
-	int DistanceBand = Nearest < 400.0f ? 0 : (Nearest < 900.0f ? 1 : 2);
+	// Encode enemy distance relative to the live server hook tuning so the policy
+	// can distinguish a reachable target from one that needs an approach.
+	const float HookReach = max(0.0f, pGS->Tuning()->m_HookLength - 20.0f);
+	int DistanceBand = Nearest < HookReach ? 0 : (Nearest < HookReach * 2.4f ? 1 : 2);
 	int State = DistanceBand * 2 + (Enemy ? 1 : 0);
 	State = State * 2 + (FrozenMate ? 1 : 0);
 	State = State * 2 + (FrozenEnemy ? 1 : 0);
@@ -565,6 +594,66 @@ void CBotAI::SetNNWeight(int Index, float Value)
 		}
 	}
 	m_BrainLoaded = true;
+}
+
+float CBotAI::ControlWeight(int Index) const
+{
+	return Index >= 0 && Index < NUM_CONTROL_WEIGHTS ? m_aControlWeights[Index] : 0.0f;
+}
+
+void CBotAI::SetControlWeight(int Index, float Value)
+{
+	if(Index >= 0 && Index < NUM_CONTROL_WEIGHTS)
+		m_aControlWeights[Index] = clamp(Value, -10.0f, 10.0f);
+}
+
+void CBotAI::ControlForward(const float *pInput, float *pOutput) const
+{
+	for(int a = 0; a < NUM_CONTROL_OUTPUTS; a++)
+	{
+		float Sum = m_aControlWeights[NUM_CONTROL_INPUTS * NUM_CONTROL_OUTPUTS + a];
+		for(int i = 0; i < NUM_CONTROL_INPUTS; i++)
+			Sum += pInput[i] * m_aControlWeights[a * NUM_CONTROL_INPUTS + i];
+		pOutput[a] = tanhf(Sum);
+	}
+}
+
+void CBotAI::LearnControl(float Reward, float Rate)
+{
+	if(!g_Config.m_SvBotLearn || !m_HasControlTransition || fabsf(Reward) < 0.001f)
+		return;
+	const int aFirst[5] = {0, 3, 5, 7, 9};
+	const int aCount[5] = {3, 2, 2, 2, 5};
+	const float Strength = clamp(fabsf(Reward) * Rate * 0.025f, 0.0f, 0.25f);
+	for(int Head = 0; Head < 5; Head++)
+	{
+		const int Chosen = m_aLastControlChoice[Head];
+		if(Chosen < 0 || Chosen >= aCount[Head])
+			continue;
+		for(int j = 0; j < aCount[Head]; j++)
+		{
+			const int Output = aFirst[Head] + j;
+			const float Target = j == Chosen ? (Reward > 0.0f ? 0.8f : -0.8f) : (Reward > 0.0f ? -0.2f : 0.2f);
+			const float Error = clamp(Target - m_aLastControlOutput[Output], -1.0f, 1.0f) * Strength;
+			for(int i = 0; i < NUM_CONTROL_INPUTS; i++)
+				m_aControlWeights[Output * NUM_CONTROL_INPUTS + i] = clamp(
+					m_aControlWeights[Output * NUM_CONTROL_INPUTS + i] + Error * m_aLastControlInput[i], -10.0f, 10.0f);
+			m_aControlWeights[NUM_CONTROL_INPUTS * NUM_CONTROL_OUTPUTS + Output] = clamp(
+				m_aControlWeights[NUM_CONTROL_INPUTS * NUM_CONTROL_OUTPUTS + Output] + Error, -10.0f, 10.0f);
+		}
+	}
+	// Train the aim outputs to reproduce the safe objective direction. External
+	// outcome rewards still update the discrete movement/action heads above.
+	for(int Output = 14; Output <= 15; Output++)
+	{
+		const float Target = m_aLastControlInput[Output - 3];
+		const float Error = clamp(Target - m_aLastControlOutput[Output], -1.0f, 1.0f) * 0.002f;
+		for(int i = 0; i < NUM_CONTROL_INPUTS; i++)
+			m_aControlWeights[Output * NUM_CONTROL_INPUTS + i] = clamp(
+				m_aControlWeights[Output * NUM_CONTROL_INPUTS + i] + Error * m_aLastControlInput[i], -10.0f, 10.0f);
+		m_aControlWeights[NUM_CONTROL_INPUTS * NUM_CONTROL_OUTPUTS + Output] = clamp(
+			m_aControlWeights[NUM_CONTROL_INPUTS * NUM_CONTROL_OUTPUTS + Output] + Error, -10.0f, 10.0f);
+	}
 }
 
 void CBotAI::UpdateQ(int State, int Action, float Reward, int NextState, bool Terminal, float Alpha)
@@ -660,6 +749,7 @@ void CBotAI::RewardAction(CGameContext *pGS, int Action, float Amount)
 		return;
 
 	float Rate = g_Config.m_SvBotLearnRate / 100.0f;
+	LearnControl(Amount, Rate);
 	if(m_HasTransition)
 		m_PendingReward = clamp(m_PendingReward + Amount, -100.0f, 100.0f);
 	float Delta = Amount * Rate * 0.06f;
@@ -1277,6 +1367,8 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	const int Tick = pGS->Server()->Tick();
 	const vec2 MyPos = pMe->m_Pos;
 	const int MyTeam = pSelf->GetTeam();
+	// Use live server tuning rather than assuming the default 380px hook.
+	const float HookReach = max(0.0f, pGS->Tuning()->m_HookLength - 20.0f);
 
 	// fng_trainbot: fresh character (first tick after spawn/respawn) — arm
 	// the timers from this tick, drop stale climb/boost state and pick the
@@ -1951,7 +2043,7 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			BotTeammatesOnFloor(pGS, ClientID, MyTeam, TargetFloor) > 0)
 			ChaseFloor = m_FloorGoal;
 		bool OtherFloor = ChaseFloor >= 0 && MyFloor >= 0 && ChaseFloor != MyFloor;
-		bool InReach = hd < 400.0f && dy > -170.0f && dy < 220.0f;
+		bool InReach = hd < HookReach && dy > -170.0f && dy < 220.0f;
 		if(HammerTactic)
 		{
 			// Follow the calculated far-side stance, then close to hammer range.
@@ -2171,11 +2263,8 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	// --- hook priority: carry prey > climb/boost anchor > attack enemy ---
 	bool JustReleased = WantRelease;
 	bool WantHook = false;
-	// fng_trainbot: the hook only reaches about HookLength (380px). Firing it
-	// from 650px looked like the bot was trying and did nothing: the hook flew
-	// into the wall behind the target and retracted, so a frozen victim was
-	// never actually grabbed and the throw never started.
-	const float HookReach = 360.0f;
+	// HookReach comes from the active server tuning above, with a small safety
+	// margin for character radius and imperfect aim.
 	if(m_BackoffTicks <= 0 && !JustReleased)
 	{
 		if(pCarried)
@@ -2359,12 +2448,6 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
 		}
 	}
-	if(WantFire)
-		m_FireState = (m_FireState + 1) & INPUT_STATE_MASK;
-	else if(m_FireState & 1)
-		m_FireState = (m_FireState + 1) & INPUT_STATE_MASK;
-	Input.m_Fire = m_FireState;
-
 	// --- aim: boost/climb anchors > the prey on our hook > heal > target ---
 	vec2 Aim;
 	bool HaveAim = false;
@@ -2431,35 +2514,9 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		Input.m_TargetY = (int)Aim.y;
 	}
 
-	Input.m_Direction = Dir;
-	Input.m_Jump = WantJump ? 1 : 0;
-	// fng_trainbot: the engine only launches the rope on a *press* while the
-	// hook is idle; holding the button leaves it retracted (state -1) and the
-	// hook never fires again. That is why the log showed 'grab #1' and never a
-	// '#2': one hold = one grab for the whole freeze. So the bot taps — release
-	// one tick, press the next — and only holds the button while a rope is
-	// actually out (flying or grabbed).
 	const int HookState = pMe->GetHookState();
 	const int HookedID = pMe->GetHookedPlayerID();
 	const bool HookOnTee = HookState == HOOK_GRABBED && HookedID >= 0;
-	if(WantHook)
-	{
-		// fng_trainbot: HOOK_GRABBED means "attached to *something*" — the engine
-		// uses the same state for a body and for a wall, and only m_HookedPlayer
-		// tells them apart. Holding the button on a wall grab kept the rope out
-		// for good, and the bot could never fire again, which is why it stood
-		// next to a frozen body and never picked him up: one unlucky hook into
-		// the floor and the throw tactic was dead for that spawn. The button is
-		// held only while the rope is in the air or on a player, and tapped
-		// otherwise.
-		if(HookState == HOOK_FLYING || HookOnTee)
-			m_HookEmit = 1;
-		else
-			m_HookEmit = m_HookEmit ? 0 : 1; // tap: 1,0,1,0…
-	}
-	else
-		m_HookEmit = 0;
-	Input.m_Hook = m_HookEmit;
 
 	// --- fng_trainbot: what to hold in hands. The hook is a button, not a
 	// weapon, so this is about the gun: in SAH there is only the pistol (it
@@ -2511,6 +2568,165 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		else
 			Dir = 0;
 	}
+
+	// State-conditioned low-level policy. Inputs 0..2 encode planner movement,
+	// 3..5 indicate legal jump/fire/hook candidates, 6..10 weapon preference,
+	// 11..12 aim and 13..39 character, target, hook, and navigation state.
+	float aControlInput[NUM_CONTROL_INPUTS] = {0};
+	float aControlOutput[NUM_CONTROL_OUTPUTS];
+	aControlInput[Dir < 0 ? 0 : (Dir == 0 ? 1 : 2)] = 1.0f;
+	const bool MandatoryJump = FlingJump || SwingJump || m_JumpTicks > 0;
+	int AheadFlags = Dir == 0 ? 0 :
+		(pGS->Collision()->GetCollisionAt(MyPos.x + Dir * 48.0f, MyPos.y) |
+		 pGS->Collision()->GetCollisionAt(MyPos.x + Dir * 48.0f, MyPos.y - 20.0f));
+	bool CanJump = !pMe->IsFrozen() && pMe->IsGrounded() &&
+		(MandatoryJump || (Dir != 0 && ((AheadFlags & CCollision::COLFLAG_SOLID) || Goal.y < MyPos.y - 140.0f)));
+	const bool CanFire = WantFire;
+	const bool CanHook = WantHook;
+	aControlInput[3] = CanJump ? 1.0f : 0.0f;
+	aControlInput[4] = CanFire ? 1.0f : 0.0f;
+	aControlInput[5] = CanHook ? 1.0f : 0.0f;
+	const int aWeapons[5] = {WEAPON_HAMMER, WEAPON_GUN, WEAPON_RIFLE, WEAPON_GRENADE, WEAPON_SHOTGUN};
+	int RecommendedWeapon = 1;
+	for(int i = 0; i < 5; i++)
+		if(Want == aWeapons[i])
+			RecommendedWeapon = i;
+	aControlInput[6 + RecommendedWeapon] = 1.0f;
+	vec2 RuleAim((float)Input.m_TargetX, (float)Input.m_TargetY);
+	if(length(RuleAim) > 0.0f)
+	{
+		RuleAim = normalize(RuleAim);
+		aControlInput[11] = RuleAim.x;
+		aControlInput[12] = RuleAim.y;
+	}
+	aControlInput[13] = pMe->IsGrounded() ? 1.0f : 0.0f;
+	aControlInput[14] = pMe->IsFrozen() ? 1.0f : 0.0f;
+	aControlInput[15] = pCarried ? 1.0f : 0.0f;
+	aControlInput[16] = pTarget ? 1.0f : 0.0f;
+	aControlInput[17] = pTarget && pTarget->IsFrozen() ? 1.0f : 0.0f;
+	aControlInput[18] = pHeal ? 1.0f : 0.0f;
+	aControlInput[19] = pTarget ? clamp(distance(MyPos, pTarget->m_Pos) / max(1.0f, HookReach * 2.0f), 0.0f, 1.0f) : 1.0f;
+	aControlInput[20] = clamp((Goal.x - MyPos.x) / 800.0f, -1.0f, 1.0f);
+	aControlInput[21] = clamp((Goal.y - MyPos.y) / 800.0f, -1.0f, 1.0f);
+	vec2 Velocity = pMe->GetVel();
+	aControlInput[22] = clamp(Velocity.x / 20.0f, -1.0f, 1.0f);
+	aControlInput[23] = clamp(Velocity.y / 20.0f, -1.0f, 1.0f);
+	aControlInput[24] = HookState == HOOK_FLYING ? 1.0f : 0.0f;
+	aControlInput[25] = HookState == HOOK_GRABBED ? 1.0f : 0.0f;
+	aControlInput[26] = pTarget && distance(MyPos, pTarget->m_Pos) < HookReach ? 1.0f : 0.0f;
+	aControlInput[27] = Climbing ? 1.0f : 0.0f;
+	aControlInput[28] = Boosting ? 1.0f : 0.0f;
+	aControlInput[29] = Swinging ? 1.0f : 0.0f;
+	aControlInput[30] = EdgeBlocked ? 1.0f : 0.0f;
+	for(int i = 0; i < 5; i++)
+		aControlInput[31 + i] = pMe->HasWeapon(aWeapons[i]) ? 1.0f : 0.0f;
+	aControlInput[36] = pTarget && !pTarget->IsFrozen() ? 1.0f : 0.0f;
+	aControlInput[37] = m_BackoffTicks > 0 ? 1.0f : 0.0f;
+	aControlInput[38] = FlingJump ? 1.0f : 0.0f;
+	aControlInput[39] = HammerSwing ? 1.0f : 0.0f;
+	ControlForward(aControlInput, aControlOutput);
+
+	// The policy selects among three movement directions and legal button
+	// candidates. Collision, inventory, and mandatory-hook checks remain safety masks.
+	int MoveChoice = 0;
+	for(int i = 1; i < 3; i++)
+		if(aControlOutput[i] > aControlOutput[MoveChoice])
+			MoveChoice = i;
+	int LearnedDir = MoveChoice == 1 ? 0 : (MoveChoice == 0 ? -1 : 1);
+	bool SafeLearnedMove = true;
+	if(LearnedDir != 0)
+	{
+		const int FrontFlags = pGS->Collision()->GetCollisionAt(MyPos.x + LearnedDir * 48.0f, MyPos.y) |
+			pGS->Collision()->GetCollisionAt(MyPos.x + LearnedDir * 48.0f, MyPos.y - 20.0f);
+		const int FootFlags = pGS->Collision()->GetCollisionAt(MyPos.x + LearnedDir * 48.0f, MyPos.y + 16.0f);
+		SafeLearnedMove = !((FrontFlags | FootFlags) & BOT_DANGER_MASK) &&
+			!(FrontFlags & CCollision::COLFLAG_SOLID) &&
+			((Climbing && m_ClimbingUp) || !BotDeadlyDrop(pGS, MyPos, LearnedDir));
+	}
+	if(SafeLearnedMove)
+		Dir = LearnedDir;
+	MoveChoice = Dir < 0 ? 0 : (Dir == 0 ? 1 : 2);
+	AheadFlags = Dir == 0 ? 0 :
+		(pGS->Collision()->GetCollisionAt(MyPos.x + Dir * 48.0f, MyPos.y) |
+		 pGS->Collision()->GetCollisionAt(MyPos.x + Dir * 48.0f, MyPos.y - 20.0f));
+	CanJump = !pMe->IsFrozen() && pMe->IsGrounded() &&
+		(MandatoryJump || (Dir != 0 && ((AheadFlags & CCollision::COLFLAG_SOLID) || Goal.y < MyPos.y - 140.0f)));
+	WantJump = MandatoryJump || (CanJump && aControlOutput[4] > aControlOutput[3]);
+	WantFire = HammerSwing || (CanFire && aControlOutput[6] > aControlOutput[5]);
+	const bool MandatoryHook = pCarried || Climbing || Boosting || HookState == HOOK_FLYING || HookOnTee;
+	WantHook = MandatoryHook || (CanHook && aControlOutput[8] > aControlOutput[7]);
+	const float ExploreRate = g_Config.m_SvBotLearn ? g_Config.m_SvBotExplore / 500.0f : 0.0f;
+	if(frandom() < ExploreRate)
+	{
+		if(CanJump && !MandatoryJump)
+			WantJump = frandom() < 0.5f;
+		if(CanFire && !HammerSwing)
+			WantFire = frandom() < 0.5f;
+		if(CanHook && !MandatoryHook)
+			WantHook = frandom() < 0.5f;
+	}
+
+	// Weapon logits are masked by actual inventory, with the planner's
+	// recommendation as the safe default when no trained preference exists.
+	int LearnedWeapon = Want;
+	float BestWeapon = -1e30f;
+	for(int i = 0; i < 5; i++)
+	{
+		if(!pMe->HasWeapon(aWeapons[i]))
+			continue;
+		float Score = aControlOutput[9 + i];
+		if(aWeapons[i] == Want)
+			Score += 0.15f;
+		if(Score > BestWeapon)
+		{
+			BestWeapon = Score;
+			LearnedWeapon = aWeapons[i];
+		}
+	}
+	Want = LearnedWeapon;
+	if(HaveAim && !pCarried && !HammerSwing && !Climbing && !Boosting && length(RuleAim) > 0.0f)
+	{
+		vec2 LearnedAim(aControlOutput[14], aControlOutput[15]);
+		vec2 FinalAim = RuleAim * 0.9f + LearnedAim * 0.1f;
+		if(length(FinalAim) > 0.01f)
+		{
+			FinalAim = normalize(FinalAim);
+			Input.m_TargetX = (int)(FinalAim.x * max(1.0f, length(Aim)));
+			Input.m_TargetY = (int)(FinalAim.y * max(1.0f, length(Aim)));
+		}
+	}
+	for(int i = 0; i < NUM_CONTROL_INPUTS; i++)
+		m_aLastControlInput[i] = aControlInput[i];
+	for(int i = 0; i < NUM_CONTROL_OUTPUTS; i++)
+		m_aLastControlOutput[i] = aControlOutput[i];
+	m_aLastControlChoice[0] = MoveChoice;
+	m_aLastControlChoice[1] = WantJump ? 1 : 0;
+	m_aLastControlChoice[2] = WantFire ? 1 : 0;
+	m_aLastControlChoice[3] = WantHook ? 1 : 0;
+	m_aLastControlChoice[4] = 0;
+	for(int i = 0; i < 5; i++)
+		if(Want == aWeapons[i])
+			m_aLastControlChoice[4] = i;
+	m_HasControlTransition = true;
+	Input.m_Direction = Dir;
+	Input.m_Jump = WantJump ? 1 : 0;
+	if(WantFire)
+		m_FireState = (m_FireState + 1) & INPUT_STATE_MASK;
+	else if(m_FireState & 1)
+		m_FireState = (m_FireState + 1) & INPUT_STATE_MASK;
+	Input.m_Fire = m_FireState;
+	if(WantHook)
+	{
+		if(HookState == HOOK_FLYING || HookOnTee)
+			m_HookEmit = 1;
+		else
+			m_HookEmit = m_HookEmit ? 0 : 1;
+	}
+	else
+		m_HookEmit = 0;
+	Input.m_Hook = m_HookEmit;
+	if(Want != pMe->GetActiveWeapon())
+		Input.m_WantedWeapon = Want + 1;
 
 	// fng_trainbot: the trace you actually need when the bots stand still and
 	// you cannot see why — where we are, where the goal is, and whether we

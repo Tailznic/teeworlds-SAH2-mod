@@ -26,6 +26,7 @@ public:
 	};
 	static const char *ActionName(int Action);
 	enum { NUM_QSTATES = 96, NUM_NN_INPUTS = 8, NUM_NN_HIDDEN = 12, NUM_NN_WEIGHTS = NUM_NN_INPUTS * NUM_NN_HIDDEN + NUM_NN_HIDDEN + NUM_NN_HIDDEN * NUM_BOTACTIONS + NUM_BOTACTIONS };
+	enum { NUM_CONTROL_INPUTS = 40, NUM_CONTROL_OUTPUTS = 16, NUM_CONTROL_WEIGHTS = NUM_CONTROL_INPUTS * NUM_CONTROL_OUTPUTS + NUM_CONTROL_OUTPUTS };
 
 	int GetAction() const { return m_Action; }
 	int Observation(CGameContext *pGS, int ClientID) const;
@@ -33,6 +34,10 @@ public:
 	void EndEpisode(float Reward, float Alpha);
 	float NNWeight(int Index) const;
 	void SetNNWeight(int Index, float Value);
+	float ControlWeight(int Index) const;
+	void SetControlWeight(int Index, float Value);
+	void ControlForward(const float *pInput, float *pOutput) const;
+	void LearnControl(float Reward, float Rate);
 
 	// fng_trainbot: current tactical target. Other bots use it to avoid
 	// crowding the same frozen tee.
@@ -175,6 +180,11 @@ private:
 	int m_ActionTick;      // when that action expires
 	int m_ActionRewardTick;
 	bool m_BrainLoaded;
+	float m_aControlWeights[NUM_CONTROL_WEIGHTS];
+	float m_aLastControlInput[NUM_CONTROL_INPUTS];
+	float m_aLastControlOutput[NUM_CONTROL_OUTPUTS];
+	int m_aLastControlChoice[5]; // move, jump, fire, hook, weapon
+	bool m_HasControlTransition;
 };
 
 #endif

@@ -1601,6 +1601,14 @@ void CGameContext::LoadBotBrains()
 					Loaded++;
 				}
 			}
+			else if(str_comp_num(aLine, "ctl", 3) == 0)
+			{
+				int CID = -1, Index = -1;
+				float Value = 0.0f;
+				if(sscanf(aLine + 3, "%d %d %f", &CID, &Index, &Value) == 3 &&
+					CID >= 0 && CID < MAX_CLIENTS && Index >= 0 && Index < CBotAI::NUM_CONTROL_WEIGHTS)
+					m_aBotAI[CID].SetControlWeight(Index, Value);
+			}
 			else if(str_comp_num(aLine, "nn", 2) == 0)
 			{
 				int CID = -1, Index = -1;
@@ -1648,6 +1656,12 @@ void CGameContext::SaveBotBrains()
 		for(int Index = 0; Index < CBotAI::NUM_NN_WEIGHTS; Index++)
 		{
 			str_format(aBuf, sizeof(aBuf), "nn %d %d %.7f", i, Index, m_aBotAI[i].NNWeight(Index));
+			io_write(File, aBuf, str_length(aBuf));
+			io_write_newline(File);
+		}
+		for(int Index = 0; Index < CBotAI::NUM_CONTROL_WEIGHTS; Index++)
+		{
+			str_format(aBuf, sizeof(aBuf), "ctl %d %d %.7f", i, Index, m_aBotAI[i].ControlWeight(Index));
 			io_write(File, aBuf, str_length(aBuf));
 			io_write_newline(File);
 		}
