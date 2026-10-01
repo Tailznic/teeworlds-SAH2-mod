@@ -1,4 +1,4 @@
-﻿/* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
+/* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #include <new>
 #include <base/math.h>
@@ -51,7 +51,22 @@ void CGameContext::Construct(int Resetting)
 		m_aIsBot[i] = false;
 		m_aBotAI[i].Reset();
 		m_aBotTauntTick[i] = -1000000;
+		m_aThrowTrace[i].m_Active = false;
+		m_aThrowTrace[i].m_Thrower = -1;
+		m_aThrowTrace[i].m_StartTick = 0;
+		m_aThrowTrace[i].m_PreyStart = vec2(0.0f, 0.0f);
+		m_aThrowTrace[i].m_BotStart = vec2(0.0f, 0.0f);
+		m_aThrowTrace[i].m_PreyEnd = vec2(0.0f, 0.0f);
+		m_aThrowTrace[i].m_BotEnd = vec2(0.0f, 0.0f);
+		m_aThrowTrace[i].m_Cluster = -1;
+		m_aThrowTrace[i].m_Reach = 0.0f;
+		m_aActionHead[i] = 0;
+		m_aActionCount[i] = 0;
+		m_aLastDeathPos[i] = vec2(0.0f, 0.0f);
+		m_aLastDeathCluster[i] = -1;
 	}
+	m_NumBotThrowRecipes = 0;
+	m_BotThrowBookSaveTick = 0;
 	m_NumBotSpikes = 0;
 	m_NumBotNav = 0;
 	m_NumBotFloors = 0;
@@ -653,10 +668,456 @@ void CGameContext::SwapTeams()
 	(void)m_pController->CheckTeamBalance();
 }
 
+// fng_trainbot: which spike cluster is closest to a point, and how far. Used by
+// the throw telemetry to say "he was aiming at that one and got this close".
+int CGameContext::NearestThrowTarget(vec2 Pos, float *pDist) const
+{
+	int Best = -1;
+	float BestD = 1e9f;
+	for(int i = 0; i < m_NumBotThrowTargets; i++)
+	{
+		float d = distance(Pos, m_aBotThrowTargets[i].m_Pos);
+		if(d < BestD)
+		{
+			BestD = d;
+			Best = i;
+		}
+	}
+	if(pDist)
+		*pDist = BestD;
+	return Best;
+}
+
+// fng_trainbot: throw telemetry. A FNG throw is not a scripted animation, it is
+// geometry: a frozen body is dragged towards whoever holds the rope, so the
+// only thing that decides the kill is the line the body travels. The tile grid
+// cannot tell us which of those lines a person actually uses, so every throw on
+// the server is recorded — who held, from where, to where, and how close the
+// body came to the teeth. The log is the training data for the bot's throw
+// planner, and it does not care whether the thrower was a bot or a human.
+// fng_trainbot: the throw book. The bots used to be told where to stand by a
+// rule written by hand, and every one of them was wrong on this map. Now a
+// throw is learned from anyone who makes one: the geometry that produced a
+// kill is kept, the geometry that did not is kept too but never chosen. A
+// person's throw and a bot's throw go into the same table in the same units, so
+// playing on the server is what teaches the bots — nobody has to relabel
+// anything afterwards.
+void CGameContext::NoteThrowRecipe(vec2 Cluster, vec2 Prey, vec2 Stand, bool Hit)
+{
+	if(m_NumBotThrowRecipes <= 0)
+		return;
+
+	// the same throw again? then it is the same recipe, only the score changes
+	int BestI = -1;
+	float BestD = 160.0f * 160.0f; // a body 160px away is "the same situation"
+	for(int i = 0; i < m_NumBotThrowRecipes; i++)
+	{
+		const CThrowRecipe &R = m_aThrowRecipes[i];
+		if(distance(R.m_Cluster, Cluster) > 48.0f)
+			continue;
+		float d = distance(R.m_Prey, Prey);
+		if(d < BestD)
+		{
+			BestD = d;
+			BestI = i;
+		}
+	}
+
+	if(BestI < 0)
+	{
+		if(m_NumBotThrowRecipes >= MAX_BOT_THROW_RECIPES)
+		{
+			// the book is full: forget the recipe that has proved worst, which
+			// is the one with the poorest hit rate and the fewest attempts
+			int Worst = 0;
+			float WorstScore = 1e9f;
+			for(int i = 0; i < m_NumBotThrowRecipes; i++)
+			{
+				const CThrowRecipe &R = m_aThrowRecipes[i];
+				float s = (float)R.m_Hits / (float)max(1, R.m_Tries) * 100.0f + (float)R.m_Tries;
+				if(s < WorstScore)
+				{
+					WorstScore = s;
+					Worst = i;
+				}
+			}
+			BestI = Worst;
+		}
+		else
+		{
+			BestI = m_NumBotThrowRecipes++;
+			CThrowRecipe &R = m_aThrowRecipes[BestI];
+			R.m_Cluster = Cluster;
+			R.m_Prey = Prey;
+			R.m_Stand = Stand;
+			R.m_Hits = 0;
+			R.m_Tries = 0;
+		}
+	}
+
+	CThrowRecipe &R = m_aThrowRecipes[BestI];
+	R.m_Tries++;
+	if(Hit)
+		R.m_Hits++;
+	// a stand that is clearly better is allowed to overwrite the old one: a
+	// person finds the good spot and the bot should take it next time
+	if(Hit || R.m_Tries == 1)
+		R.m_Stand = Stand;
+}
+
+bool CGameContext::BotRecipeStand(vec2 Cluster, vec2 Prey, vec2 *pOut) const
+{
+	if(m_NumBotThrowRecipes <= 0)
+		return false;
+	int BestI = -1;
+	float BestD = 260.0f * 260.0f; // only copy a throw made from a comparable spot
+	for(int i = 0; i < m_NumBotThrowRecipes; i++)
+	{
+		const CThrowRecipe &R = m_aThrowRecipes[i];
+		if(distance(R.m_Cluster, Cluster) > 48.0f)
+			continue;
+		// what worked beats what did not: a recipe that has landed is preferred
+		// over a slightly closer one that never did
+		float d = distance(R.m_Prey, Prey);
+		if(d < 40.0f && R.m_Hits == 0)
+			d += 200.0f; // tried from here, never once
+		if(d < BestD)
+		{
+			BestD = d;
+			BestI = i;
+		}
+	}
+	if(BestI < 0)
+		return false;
+	if(pOut)
+		*pOut = m_aThrowRecipes[BestI].m_Stand;
+	return true;
+}
+
+float CGameContext::BotClusterHitRate(vec2 Cluster) const
+{
+	int Hits = 0, Tries = 0;
+	for(int i = 0; i < m_NumBotThrowRecipes; i++)
+	{
+		const CThrowRecipe &R = m_aThrowRecipes[i];
+		if(distance(R.m_Cluster, Cluster) > 48.0f)
+			continue;
+		Hits += R.m_Hits;
+		Tries += R.m_Tries;
+	}
+	if(Tries <= 0)
+		return -1.0f; // nothing on file: no opinion
+	return (float)Hits / (float)Tries;
+}
+
+void CGameContext::SaveThrowBook()
+{
+	if(m_NumBotThrowRecipes <= 0)
+		return;
+	IStorage *pStorage = Kernel()->RequestInterface<IStorage>();
+	if(!pStorage)
+		return;
+	IOHANDLE File = pStorage->OpenFile(g_Config.m_SvBotThrowFile, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+	if(!File)
+		return;
+	char aBuf[256];
+	io_write(File, "# fng2 throw book - learned from play, bots and people alike\n", 58);
+	io_write(File, "# clusterX clusterY preyX preyY standX standY hits tries\n", 53);
+	for(int i = 0; i < m_NumBotThrowRecipes; i++)
+	{
+		const CThrowRecipe &R = m_aThrowRecipes[i];
+		str_format(aBuf, sizeof(aBuf), "T %.0f %.0f %.0f %.0f %.0f %.0f %d %d\n",
+			R.m_Cluster.x, R.m_Cluster.y, R.m_Prey.x, R.m_Prey.y, R.m_Stand.x, R.m_Stand.y,
+			R.m_Hits, R.m_Tries);
+		io_write(File, aBuf, str_length(aBuf));
+	}
+	io_close(File);
+}
+
+void CGameContext::LoadThrowBook()
+{
+	m_NumBotThrowRecipes = 0;
+	IStorage *pStorage = Kernel()->RequestInterface<IStorage>();
+	if(!pStorage)
+		return;
+	IOHANDLE File = pStorage->OpenFile(g_Config.m_SvBotThrowFile, IOFLAG_READ, IStorage::TYPE_SAVE);
+	if(!File)
+		return;
+
+	// the whole book in one read, the same way the habit table is loaded
+	long Size = io_length(File);
+	if(Size <= 0 || Size > 256 * 1024)
+	{
+		io_close(File);
+		return;
+	}
+	char *pBuf = new char[Size + 1];
+	io_read(File, pBuf, (unsigned)Size);
+	pBuf[Size] = 0;
+	io_close(File);
+
+	int Loaded = 0;
+	const char *pLine = pBuf;
+	while(*pLine)
+	{
+		const char *pEnd = str_find(pLine, "\n");
+		char aLine[256];
+		int Len = pEnd ? (int)(pEnd - pLine) : (int)str_length(pLine);
+		if(Len > 0 && Len < (int)sizeof(aLine) && pLine[0] == 'T')
+		{
+			mem_copy(aLine, pLine, Len);
+			aLine[Len] = 0;
+			float cx, cy, px, py, sx, sy;
+			int Hits, Tries;
+			if(sscanf(aLine + 1, "%f %f %f %f %f %f %d %d", &cx, &cy, &px, &py, &sx, &sy, &Hits, &Tries) == 8)
+			{
+				CThrowRecipe &R = m_aThrowRecipes[m_NumBotThrowRecipes++];
+				R.m_Cluster = vec2(cx, cy);
+				R.m_Prey = vec2(px, py);
+				R.m_Stand = vec2(sx, sy);
+				R.m_Hits = Hits;
+				R.m_Tries = Tries;
+				Loaded++;
+			}
+		}
+		if(!pEnd)
+			break;
+		pLine = pEnd + 1;
+	}
+	delete[] pBuf;
+
+	char aBuf[160];
+	str_format(aBuf, sizeof(aBuf), "throw book: %d learned throws on file", Loaded);
+	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+}
+
+void CGameContext::UpdateThrowTraces()
+{
+	if(!g_Config.m_SvBotThrowLog)
+		return;
+
+	const int Tick = Server()->Tick();
+
+	// who is on whose rope right now? The hook *holder* is the character whose
+	// core is HOOK_GRABBED with a hooked player (gamecore sets both on the
+	// thrower) — the body being dragged is the one named in m_HookedPlayer.
+	int aHookedBy[MAX_CLIENTS];
+	for(int i = 0; i < MAX_CLIENTS; i++)
+		aHookedBy[i] = -1;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		CPlayer *p = m_apPlayers[i];
+		if(!p)
+			continue;
+		CCharacter *pC = p->GetCharacter();
+		if(!pC || !pC->IsAlive() || !pC->IsHookGrabbed())
+			continue;
+		int Hooked = pC->GetHookedPlayerID();
+		if(Hooked >= 0 && Hooked < MAX_CLIENTS && Hooked != i)
+			aHookedBy[Hooked] = i;
+	}
+
+	for(int v = 0; v < MAX_CLIENTS; v++)
+	{
+		CThrowTrace &T = m_aThrowTrace[v];
+		CPlayer *pV = m_apPlayers[v];
+		CCharacter *pVC = pV ? pV->GetCharacter() : 0;
+		bool Alive = pVC && pVC->IsAlive();
+		int Thrower = aHookedBy[v];
+
+		// a throw we were watching: the victim died (that is a kill) or the rope
+		// came off (the game drops a body after ~1.25s) — either way, report
+		if(T.m_Active && (Thrower != T.m_Thrower || !Alive || !pVC->IsFrozen()))
+		{
+			float D = 0.0f;
+			int Near = pVC && pVC->IsAlive() ? NearestThrowTarget(pVC->m_Pos, &D) : T.m_Cluster;
+			bool Hit = false;
+			if(Near >= 0)
+			{
+				float R = m_aBotThrowTargets[Near].m_Radius;
+				Hit = Alive && D <= R + 30.0f;
+			}
+			char aBuf[320];
+			str_format(aBuf, sizeof(aBuf),
+				"THROW t=%d-%d dur=%d thrower=%d%s victim=%d prey=%.0f,%.0f->%.0f,%.0f "
+				"bot=%.0f,%.0f->%.0f,%.0f carried=%.0f cluster=%d near=%.0f %s",
+				T.m_StartTick, Tick, Tick - T.m_StartTick,
+				T.m_Thrower, m_aIsBot[T.m_Thrower] ? "(bot)" : "",
+				v, T.m_PreyStart.x, T.m_PreyStart.y, T.m_PreyEnd.x, T.m_PreyEnd.y,
+				T.m_BotStart.x, T.m_BotStart.y, T.m_BotEnd.x, T.m_BotEnd.y,
+				distance(T.m_PreyStart, T.m_PreyEnd), T.m_Cluster, D,
+				!Alive ? "VICTIM DIED" : (Hit ? "HIT" : "MISS"));
+			Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+			T.m_Active = false;
+			T.m_Thrower = -1;
+
+			// fng_trainbot: this throw is now a lesson. It is filed whether it
+			// scored or not — a miss is just as informative, it only carries no
+			// weight when the bot has to choose where to stand. Both the body's
+			// start and the spot the thrower actually used are what get kept.
+			if(T.m_Cluster >= 0 && T.m_Cluster < m_NumBotThrowTargets)
+				NoteThrowRecipe(m_aBotThrowTargets[T.m_Cluster].m_Pos,
+					T.m_PreyStart, T.m_BotStart, Hit || !Alive);
+		}
+
+		// a new throw: somebody's rope is on a frozen enemy that is not moving
+		// much under its own power (it was lying on the floor a moment ago)
+		if(!T.m_Active && Thrower >= 0 && Alive && pVC->IsFrozen())
+		{
+			CPlayer *pT = m_apPlayers[Thrower];
+			CCharacter *pTC = pT ? pT->GetCharacter() : 0;
+			if(!pTC || !pTC->IsAlive())
+				continue;
+			float d = distance(pTC->m_Pos, pVC->m_Pos);
+			// the rope only bites when it is really on him, and a throw is a
+			// deliberate walk, not the 360px lunge of a hook-climb
+			if(d > 420.0f)
+				continue;
+			T.m_Active = true;
+			T.m_Thrower = Thrower;
+			T.m_StartTick = Tick;
+			T.m_PreyStart = pVC->m_Pos;
+			T.m_BotStart = pTC->m_Pos;
+			T.m_PreyEnd = pVC->m_Pos;
+			T.m_BotEnd = pTC->m_Pos;
+			T.m_Cluster = NearestThrowTarget(pVC->m_Pos, 0);
+			if(g_Config.m_SvBotThrowLog)
+			{
+				char aBuf[256];
+				str_format(aBuf, sizeof(aBuf),
+					"THROW start t=%d thrower=%d%s victim=%d prey=%.0f,%.0f bot=%.0f,%.0f d=%.0f cluster=%d",
+					Tick, Thrower, m_aIsBot[Thrower] ? "(bot)" : "",
+					v, T.m_PreyStart.x, T.m_PreyStart.y, T.m_BotStart.x, T.m_BotStart.y, d, T.m_Cluster);
+				Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+			}
+		}
+		else if(T.m_Active)
+		{
+			// keep the end points fresh while the drag is running
+			CPlayer *pT = m_apPlayers[T.m_Thrower];
+			CCharacter *pTC = pT ? pT->GetCharacter() : 0;
+			if(pTC && pTC->IsAlive())
+				T.m_BotEnd = pTC->m_Pos;
+			if(Alive)
+				T.m_PreyEnd = pVC->m_Pos;
+		}
+	}
+}
+
+// fng_trainbot: sample what every player on the server is doing, bots and
+// humans through the same code. Twelve samples a second is enough to see a
+// throw: which way the feet went, when the rope went out, when it came off.
+void CGameContext::RecordActionFrames()
+{
+	const int Tick = Server()->Tick();
+	if(Tick % 4)
+		return;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		CPlayer *p = m_apPlayers[i];
+		if(!p)
+			continue;
+		CCharacter *pC = p->GetCharacter();
+		if(!pC || !pC->IsAlive())
+		{
+			// a dead or absent tee still ends its own trace: the window is
+			// flushed by the death event, so just stop feeding it
+			continue;
+		}
+		CActionFrame &F = m_aAction[i][m_aActionHead[i]];
+		vec2 V = pC->GetVel();
+		const CNetObj_PlayerInput &In = pC->GetInput();
+		F.m_PosX = (short)pC->m_Pos.x;
+		F.m_PosY = (short)pC->m_Pos.y;
+		F.m_VelX = (short)clamp(V.x, -32000.0f, 32000.0f);
+		F.m_VelY = (short)clamp(V.y, -32000.0f, 32000.0f);
+		F.m_Dir = (signed char)In.m_Direction;
+		F.m_Jump = (signed char)(In.m_Jump ? 1 : 0);
+		F.m_Hook = (signed char)(In.m_Hook ? 1 : 0);
+		F.m_Fire = (signed char)(In.m_Fire ? 1 : 0);
+		F.m_Weapon = (signed char)pC->GetWeapon();
+		int Flags = 0;
+		if(pC->IsGrounded())
+			Flags |= 1;
+		if(pC->IsFrozen())
+			Flags |= 2;
+		if(pC->IsHookGrabbed())
+			Flags |= 4;
+		F.m_Flags = (signed char)Flags;
+
+		m_aActionHead[i] = (m_aActionHead[i] + 1) % MAX_ACTION_FRAMES;
+		if(m_aActionCount[i] < MAX_ACTION_FRAMES)
+			m_aActionCount[i]++;
+	}
+}
+
+// fng_trainbot: flush one player's recent input together with the outcome it
+// led to. One block is a complete training example: the moment (spike kill,
+// rescue, freeze, death), what it was worth, and the seconds of walking,
+// aiming and roping that produced it. Records from a person and from a bot are
+// written in the same format, so good human play can be used as the target the
+// bot is trying to reproduce, and bad play is filtered out by the reward.
+void CGameContext::ExportActionTrace(int CID, const char *pType, int Extra, float Reward)
+{
+	if(!g_Config.m_SvBotThrowLog || CID < 0 || CID >= MAX_CLIENTS)
+		return;
+	CPlayer *p = m_apPlayers[CID];
+	int Num = m_aActionCount[CID];
+	if(Num <= 0)
+		return;
+
+	char aBuf[256];
+	str_format(aBuf, sizeof(aBuf),
+		"TRACE type=%s who=%d team=%d bot=%d reward=%+.2f extra=%d frames=%d tick=%d",
+		pType, CID, p ? p->GetTeam() : -1, m_aIsBot[CID] ? 1 : 0,
+		Reward, Extra, Num, Server()->Tick());
+	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+
+	int Head = m_aActionHead[CID];
+	for(int k = 0; k < Num; k++)
+	{
+		// oldest first
+		int Idx = (Head - Num + k + MAX_ACTION_FRAMES * 2) % MAX_ACTION_FRAMES;
+		const CActionFrame &F = m_aAction[CID][Idx];
+		str_format(aBuf, sizeof(aBuf),
+			"  A %d i=%d p=%d,%d v=%d,%d d=%d j=%d h=%d f=%d w=%d fl=%d",
+			CID, k, F.m_PosX, F.m_PosY, F.m_VelX, F.m_VelY,
+			F.m_Dir, F.m_Jump, F.m_Hook, F.m_Fire, F.m_Weapon, F.m_Flags);
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+	}
+	// the window is spent: the next event starts a fresh one
+	m_aActionCount[CID] = 0;
+	m_aActionHead[CID] = 0;
+}
+
+// fng_trainbot: somebody was just frozen. Freezing is the commonest event in
+// FNG by a wide margin, so this is quiet unless sv_bot_trace_freeze is on — but
+// when it is, the shooter's last few seconds are filed under FREEZE, which is
+// the answer to "what exactly does it take to freeze somebody".
+void CGameContext::BotNoteFreeze(int FreezerCID, int VictimCID)
+{
+	if(!g_Config.m_SvBotTraceFreeze)
+		return;
+	float D = 0.0f;
+	CCharacter *pVC = (VictimCID >= 0 && VictimCID < MAX_CLIENTS && m_apPlayers[VictimCID]) ?
+		m_apPlayers[VictimCID]->GetCharacter() : 0;
+	int Cluster = pVC ? NearestThrowTarget(pVC->m_Pos, &D) : -1;
+	ExportActionTrace(FreezerCID, "FREEZE", Cluster, 1.0f);
+}
+
 void CGameContext::OnTick()
 {
 	// SAH: spike-death melt rings (particles vanish one by one)
 	TickDeathAnims();
+
+	// fng_trainbot: watch every throw before the world moves, so the trace
+	// holds the positions the throw actually used, and keep the input history
+	// of every player for the outcome that will eventually be attributed to it
+	if(g_Config.m_SvBotThrowLog)
+	{
+		UpdateThrowTraces();
+		RecordActionFrames();
+	}
 
 	// SAH: feed bot inputs before the world ticks so they apply this tick
 	TickBots();
@@ -1001,9 +1462,6 @@ void CGameContext::BotTauntOnFreeze(int FreezerCID, int VictimCID)
 // and the next choice is drawn from the updated weights.
 void CGameContext::BotRewardKill(int KillerCID, int VictimCID, int Weapon)
 {
-	if(!g_Config.m_SvBotLearn)
-		return;
-
 	// a spike kill is the best possible result in FNG, a plain kill is decent
 	float Amount = 0.0f;
 	if(Weapon >= WEAPON_SPIKE_NORMAL)
@@ -1012,6 +1470,33 @@ void CGameContext::BotRewardKill(int KillerCID, int VictimCID, int Weapon)
 		Amount = 2.0f;
 	else if(Weapon == WEAPON_HAMMER)
 		Amount = 1.0f; // unfreezing a teammate
+
+	// fng_trainbot: remember where it happened *before* anything is torn down —
+	// this is the character that is about to stop existing, and the position is
+	// the only way to say afterwards which spikes did the work
+	if(VictimCID >= 0 && VictimCID < MAX_CLIENTS)
+	{
+		CCharacter *pVC = m_apPlayers[VictimCID] ? m_apPlayers[VictimCID]->GetCharacter() : 0;
+		vec2 Pos = pVC ? pVC->m_Pos : m_aLastDeathPos[VictimCID];
+		m_aLastDeathPos[VictimCID] = Pos;
+		m_aLastDeathCluster[VictimCID] = NearestThrowTarget(Pos, 0);
+	}
+
+	// fng_trainbot: the moment something was actually won or lost. This is the
+	// label the recorded input is filed under, and it carries the reward that
+	// tells good play from bad. It runs for every player, not only bots: the
+	// point is to have a human's spike kill and a bot's spike kill in the same
+	// file, in the same format, so one can be learned from the other.
+	if(Weapon >= WEAPON_SPIKE_NORMAL)
+		ExportActionTrace(KillerCID, "SPIKE", m_aLastDeathCluster[VictimCID], Amount);
+	else if(Amount > 0.0f)
+		ExportActionTrace(KillerCID, "KILL", -1, Amount);
+	// and the other side of it: what it cost the one who got it
+	if(VictimCID >= 0 && VictimCID < MAX_CLIENTS)
+		ExportActionTrace(VictimCID, "DIED", m_aLastDeathCluster[VictimCID], -Amount);
+
+	if(!g_Config.m_SvBotLearn)
+		return;
 
 	if(KillerCID >= 0 && KillerCID < MAX_CLIENTS && m_aIsBot[KillerCID])
 	{
@@ -1038,6 +1523,11 @@ void CGameContext::BotRewardKill(int KillerCID, int VictimCID, int Weapon)
 
 void CGameContext::BotRewardRescue(int RescuerCID, int VictimCID)
 {
+	// fng_trainbot: a rescue is worth points and it is the one thing a person
+	// does that the bot almost never manages, so it is recorded for anybody —
+	// the export has to happen before the bot-only guard below
+	ExportActionTrace(RescuerCID, "RESCUE", -1, 3.0f);
+
 	if(!g_Config.m_SvBotLearn)
 		return;
 	if(RescuerCID < 0 || RescuerCID >= MAX_CLIENTS || !m_aIsBot[RescuerCID])
@@ -1147,6 +1637,14 @@ void CGameContext::TickBots()
 	{
 		m_BotBrainSaveTick = Server()->Tick();
 		SaveBotBrains();
+	}
+
+	// fng_trainbot: the throw book is written out on the same schedule as the
+	// habit table, so a crash does not throw away what the server learned
+	if(g_Config.m_SvBotThrowLog && Server()->Tick() - m_BotThrowBookSaveTick >= Server()->TickSpeed() * 60)
+	{
+		m_BotThrowBookSaveTick = Server()->Tick();
+		SaveThrowBook();
 	}
 
 	// fng_trainbot: heartbeat — if this line stops repeating, the world is
@@ -2922,6 +3420,10 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 	// fng_trainbot: the learned habits are loaded after the bots exist - a fresh
 	// slot starts from a clean mind on purpose
 	LoadBotBrains();
+	// fng_trainbot: ... and so is the throw book, so a server that has already
+	// been played starts by throwing the way it was taught
+	LoadThrowBook();
+
 
 #ifdef CONF_DEBUG
 	if(m_Config->m_DbgDummies)
@@ -3034,6 +3536,10 @@ void CGameContext::OnInit(IKernel *pKernel, IMap* pMap, CConfiguration* pConfigF
 	// fng_trainbot: the learned habits are loaded after the bots exist - a fresh
 	// slot starts from a clean mind on purpose
 	LoadBotBrains();
+	// fng_trainbot: ... and so is the throw book, so a server that has already
+	// been played starts by throwing the way it was taught
+	LoadThrowBook();
+
 
 #ifdef CONF_DEBUG
 	if(m_Config->m_DbgDummies)
@@ -3051,6 +3557,8 @@ void CGameContext::OnShutdown()
 	// SAH: bots are not engine clients — free them explicitly before reset
 	if(g_Config.m_SvBotLearn)
 		SaveBotBrains(); // fng_trainbot: keep what they learned
+	if(g_Config.m_SvBotThrowLog)
+		SaveThrowBook(); // fng_trainbot: and every throw they watched anyone make
 	for(int i = 0; i < MAX_CLIENTS; i++)
 		if(m_aIsBot[i])
 			RemoveBot(i, false);

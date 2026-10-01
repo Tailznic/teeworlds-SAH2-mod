@@ -295,6 +295,90 @@ public:
 	int m_NumBotThrowTargets;
 	void CollectBotThrowTargets();
 
+	// fng_trainbot: throw telemetry — see sv_bot_throwlog. One entry per victim,
+	// so the whole server (bots and humans alike) is watched without touching
+	// either of them. A throw is "somebody's rope is on a frozen enemy".
+	struct CThrowTrace
+	{
+		int m_Thrower;    // cid holding the rope, -1 = idle
+		int m_StartTick;
+		vec2 m_PreyStart;  // where the victim lay when the rope went taut
+		vec2 m_BotStart;   // where the thrower stood at that moment
+		vec2 m_BotEnd;     // where he finished the drag
+		vec2 m_PreyEnd;    // where the victim came to rest / died
+		int m_Cluster;     // nearest cluster at the start, -1 = none
+		float m_Reach;     // how close the victim got to that cluster
+		bool m_Active;
+	};
+	CThrowTrace m_aThrowTrace[MAX_CLIENTS];
+	void UpdateThrowTraces();
+	int NearestThrowTarget(vec2 Pos, float *pDist) const;
+
+	// fng_trainbot: the throw book. Every completed throw on the server — a
+	// person's or a bot's — is filed here with its result, and the bots plan
+	// their own throws out of this table instead of out of a rule written by
+	// hand. The file outlives the process, so a server that gets played keeps
+	// getting better at throwing, and nobody has to teach it anything again.
+	//
+	// The cluster is stored as a *position*, not as an index, so a change of
+	// map cannot turn the table into nonsense: at use time the position is
+	// resolved back to whatever cluster happens to be there now.
+	enum { MAX_BOT_THROW_RECIPES = 512 };
+	struct CThrowRecipe
+	{
+		vec2 m_Cluster;  // where the teeth are
+		vec2 m_Prey;     // where the body was lying
+		vec2 m_Stand;    // where the thrower stood
+		int m_Hits;      // how often this ended in the teeth
+		int m_Tries;
+	};
+	CThrowRecipe m_aThrowRecipes[MAX_BOT_THROW_RECIPES];
+	int m_NumBotThrowRecipes;
+	int m_BotThrowBookSaveTick;
+	void LoadThrowBook();
+	void SaveThrowBook();
+	void NoteThrowRecipe(vec2 Cluster, vec2 Prey, vec2 Stand, bool Hit);
+	// the stand a player used for a throw like this one. Returns false when
+	// nothing similar is on file, and the caller falls back to its own rule.
+	bool BotRecipeStand(vec2 Cluster, vec2 Prey, vec2 *pOut) const;
+	// how often throws at this cluster actually land, 0.0..1.0
+	float BotClusterHitRate(vec2 Cluster) const;
+
+	// fng_trainbot: what every player was actually doing, sampled 12 times a
+	// second. This is the raw material for teaching the bots. The recorder does
+	// not care who is holding the controls, so a person and a bot produce the
+	// same record: when a person walks somebody into the nastiest corner of the
+	// spikes, the four seconds of input that got him there are on disk, and the
+	// bot's planner can copy that shape instead of guessing from the tile grid.
+	// Every outcome (spike kill, rescue, freeze, death) flushes the window with
+	// a reward attached, so the good play and the bad play can be told apart.
+	enum { MAX_ACTION_FRAMES = 48 }; // 48 * 4 ticks = ~3.8s of history
+	struct CActionFrame
+	{
+		short m_PosX, m_PosY;
+		short m_VelX, m_VelY;
+		signed char m_Dir;     // -1 / 0 / +1
+		signed char m_Jump;    // 0 / 1
+		signed char m_Hook;    // 0 / 1 — the rope button
+		signed char m_Fire;    // 0 / 1
+		signed char m_Weapon;  // 0 hammer, 1 gun, 3 grenade, 4 rifle
+		signed char m_Flags;   // 1 grounded, 2 frozen, 4 dragging a body
+	};
+	CActionFrame m_aAction[MAX_CLIENTS][MAX_ACTION_FRAMES];
+	int m_aActionHead[MAX_CLIENTS];  // next slot to write
+	int m_aActionCount[MAX_CLIENTS]; // how many are valid
+	void RecordActionFrames();
+	// pType/pExtra/describe the moment (e.g. "SPIKE", cluster=12). The last
+	// few seconds of that player's input are written out with the reward, so
+	// one block per event is a ready-made training example.
+	void ExportActionTrace(int CID, const char *pType, int Extra, float Reward);
+	// somebody was just frozen: file the shooter's input under FREEZE. Off by
+	// default because freezing is the most frequent event in FNG by far
+	void BotNoteFreeze(int FreezerCID, int VictimCID);
+	// the position somebody died at, remembered for the trace export
+	vec2 m_aLastDeathPos[MAX_CLIENTS];
+	int m_aLastDeathCluster[MAX_CLIENTS];
+
 
 	// SAH: spike-death melting ring animation state (per victim, position is static)
 	struct CDeathAnim

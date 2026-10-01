@@ -92,6 +92,11 @@ public:
 	// it last attacked — that is what tells the bot "he is looking away" and
 	// "he is busy shooting at somebody else"
 	vec2 GetAimVec() const { return vec2(m_Input.m_TargetX, m_Input.m_TargetY); }
+	// fng_trainbot: the last input that reached this tee. The telemetry needs to
+	// know what a player actually pressed, and that is the only place it lives.
+	const CNetObj_PlayerInput &GetInput() const { return m_Input; }
+	int GetFreezeOwner() const { return m_FreezeOwnerID; }
+	int GetWeapon() const { return m_ActiveWeapon; }
 	int GetLastAttackTick() const { return m_AttackTick; }
 
 	// fng_trainbot: weapon bookkeeping, so the bot can actually pick what to

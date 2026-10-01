@@ -84,6 +84,17 @@ private:
 	int m_BoostDir;
 	vec2 m_BoostAnchor;
 
+	// fng_trainbot: swinging. The way a person crosses a map is not running, it
+	// is hooking a spot ahead and above and steering through the pull until the
+	// rope runs out, then doing it again. It is several times faster than the
+	// ground, and it is what makes a bot arrive at a fight while it is still
+	// being set up instead of ten seconds after it.
+	int m_SwingTicks;      // ticks left of the current swing
+	int m_SwingCooldown;   // ticks before the next one may start
+	int m_SwingDir;        // which way the swing carries us, -1 / +1
+	vec2 m_SwingAnchor;
+	int m_SwingBestSpeed;  // speed along the swing, to know when it stops helping
+
 	// fng_trainbot: patrol along the map's precomputed standable shelves
 	int m_SelfCID;           // our own slot, used to give every bot its own flank
 	int m_NavIdx;            // current patrol point, -1 = pick one
@@ -117,6 +128,7 @@ private:
 	// prey -> bot and reel in.
 	int m_ThrowIdx;        // chosen spike cluster, -1 = no plan
 	vec2 m_ThrowStand;     // spot to stand on while dragging
+	bool m_ThrowLearned;   // this stand came from the throw book, not from a rule
 	int m_ThrowTick;       // next moment to re-plan the throw
 	CCharacter *m_RegrabTarget; // victim we lost and must catch again
 	int m_RegrabUntil;     // keep chasing the dropped body until this tick

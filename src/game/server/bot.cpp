@@ -316,6 +316,45 @@ static bool BotFindBoostAnchor(CGameContext *pGS, vec2 From, int Dir, vec2 *pOut
 	return true;
 }
 
+// fng_trainbot: an anchor for a swing. A swing is the DDNet way of crossing a
+// map: hook something high and ahead, and while the rope yanks you into it,
+// steer with the air control — the pull is strongest upward (gamecore damps the
+// downward pull to 30%), so an anchor above and in front turns into speed
+// instead of a lift. Running only ever gets you to the fight late.
+static bool BotFindSwingAnchor(CGameContext *pGS, vec2 From, vec2 Want, vec2 *pOut)
+{
+	vec2 Diff = Want - From;
+	if(Diff.x > -80.0f && Diff.x < 80.0f)
+		return false; // straight up/down is a climb, not a swing
+	int Dir = Diff.x > 0.0f ? 1 : -1;
+	// ahead, and above — but not straight up, that is what BotFindClimbAnchor is
+	static const float aAhead[] = {210.0f, 290.0f, 140.0f, 370.0f};
+	static const float aUp[] = {-150.0f, -230.0f, -90.0f, -310.0f};
+	for(int a = 0; a < 4; a++)
+	{
+		vec2 Cand = vec2(From.x + Dir * aAhead[a], From.y + aUp[a]);
+		if(!BotHookablePoint(pGS, Cand))
+			continue;
+		if(pGS->Collision()->GetCollisionAt(Cand.x, Cand.y) & BOT_DANGER_MASK)
+			continue;
+		if(!BotLineOfSight(pGS, From, Cand))
+			continue;
+		*pOut = Cand;
+		return true;
+	}
+	// and failing that, let a ray find the ceiling ahead
+	vec2 To = From + vec2((float)Dir * 340.0f, -260.0f);
+	vec2 Hit = To;
+	pGS->Collision()->IntersectLine(From, To, &Hit, 0);
+	if(BotHookablePoint(pGS, Hit) && !(pGS->Collision()->GetCollisionAt(Hit.x, Hit.y) & BOT_DANGER_MASK) &&
+		Hit.y < From.y - 60.0f)
+	{
+		*pOut = Hit;
+		return true;
+	}
+	return false;
+}
+
 void CBotAI::Reset()
 {
 	m_TargetCID = -1;
@@ -347,6 +386,11 @@ void CBotAI::Reset()
 	m_BoostCooldown = 0;
 	m_BoostDir = 1;
 	m_BoostAnchor = vec2(0.0f, 0.0f);
+	m_SwingTicks = 0;
+	m_SwingCooldown = 0;
+	m_SwingDir = 1;
+	m_SwingAnchor = vec2(0.0f, 0.0f);
+	m_SwingBestSpeed = 0;
 	m_NavIdx = -1;
 	m_NavGoal = vec2(0.0f, 0.0f);
 	m_NavRetargetTick = 0;
@@ -364,6 +408,7 @@ void CBotAI::Reset()
 	m_HomeFloor = -1;
 	m_ThrowIdx = -1;
 	m_ThrowStand = vec2(0.0f, 0.0f);
+	m_ThrowLearned = false;
 	m_ThrowTick = 0;
 	m_RegrabTarget = 0;
 	m_RegrabUntil = 0;
@@ -691,22 +736,6 @@ static int BotTeammatesHeadingFor(CGameContext *pGS, int SelfCID, int MyTeam, in
 	return Num;
 }
 
-// fng_trainbot: how far a point misses the segment a->b (the drag corridor)
-static float BotSegmentMiss(vec2 P, vec2 A, vec2 B)
-{
-	vec2 L = B - A;
-	float Len = length(L);
-	if(Len < 1.0f)
-		return distance(P, A);
-	vec2 u = L * (1.0f / Len);
-	float Along = dot(P - A, u);
-	if(Along < 0.0f)
-		return distance(P, A);
-	if(Along > Len)
-		return distance(P, B);
-	return length(P - (A + u * Along));
-}
-
 // fng_trainbot: where a hammer hit would send a body. The body at B is thrown
 // away from the hitter at A, so a stand point keeps the body *behind* itself
 // (between stand and cluster) only when it lies past B on the same line.
@@ -792,6 +821,21 @@ vec2 CBotAI::AddAimError(vec2 Aim, float Scale)
 // fng_trainbot: the throw. A tee on the hook is dragged towards whoever holds
 // the hook, so the trick is standing where a spike cluster sits on the line
 // prey -> bot. That is the whole geometry of a FNG throw.
+// fng_trainbot: the throw, rebuilt from 69 throws a person made on this map.
+//
+// The five that scored have nothing in common with the plan this bot used to
+// make. Every one of them pulled the body *upward*, 215..368px, towards a
+// cluster that stood 159..406px ABOVE where the body lay and less than 130px to
+// the side. The thrower did not walk away at all — his x coordinate did not
+// change by a single pixel in any of the five; he hooked the body at his feet,
+// went up the wall, and the rope walked the body up onto the ledge.
+//
+// The old plan stood far away with the cluster on the line prey->bot and
+// dragged sideways. On this map that is simply the wrong throw, which is why
+// the bot hooked bodies for minutes at a time and never scored: the drag went
+// along the shelf, parallel to the teeth, and the body ended up 170..545px
+// short. The misses in the recorded data average 93px above the body against
+// 247px for the hits, and the lift they achieved was 64px against 283px.
 void CBotAI::PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, int Tick)
 {
 	m_ThrowIdx = -1;
@@ -801,117 +845,91 @@ void CBotAI::PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, 
 	if(!g_Config.m_SvBotThrow || pGS->m_NumBotThrowTargets <= 0)
 		return;
 
-	// nearest usable clusters first — the rest of the map is never worth it
-	const int MaxCand = 10;
-	int aCand[MaxCand];
-	float aScore[MaxCand];
-	int NumCand = 0;
+	// the teeth have to be overhead: above the body, close to straight up, and
+	// within the height a 1.25s drag can actually lift
+	int BestT = -1;
+	float Best = 0.0f;
 	for(int t = 0; t < pGS->m_NumBotThrowTargets; t++)
 	{
 		const CGameContext::CBotThrowTarget &T = pGS->m_aBotThrowTargets[t];
 		if(!BotValidSpikeForTeam(T.m_Flags, MyTeam))
 			continue;
-		float d = distance(PreyPos, T.m_Pos);
-		// fng_trainbot: the game drops a grabbed tee after about 1.25s, so a
-		// cluster further away than that can never be reached — the bot used
-		// to grab the victim first and then discover the spikes were out of
-		// reach, which is why it caught bodies and never scored. Only clusters
-		// the drag can actually cover are worth planning.
-		if(d > 850.0f)
+		float dx = T.m_Pos.x - PreyPos.x;
+		float dy = T.m_Pos.y - PreyPos.y; // y grows downwards, so this is negative
+		if(dy > -110.0f)                  // not high enough to drop onto
 			continue;
-		float s = d + BotSpikePenalty(T.m_Flags);
-		int p = NumCand;
-		if(NumCand < MaxCand)
+		if(dy < -470.0f)                  // further than the rope can lift him
+			continue;
+		if(fabsf(dx) > 200.0f)            // the recorded throws were almost vertical
+			continue;
+		// straight up and near wins; the rest only if nothing better exists
+		float Score = -dy + fabsf(dx) * 0.7f + distance(MyPos, T.m_Pos) * 0.25f +
+			BotSpikePenalty(T.m_Flags) * 0.5f + frandom() * 60.0f;
+		// fng_trainbot: the book overrides opinion. If a player has already made
+		// this throw from somewhere near here and it landed, that is worth more
+		// than any rule of ours; and a cluster that has been tried enough times
+		// and never once worked is a cluster to leave alone.
+		float Rate = pGS->BotClusterHitRate(T.m_Pos);
+		if(Rate >= 0.0f && Rate < 0.2f)
+			Score += 900.0f;
+		else if(Rate > 0.0f)
+			Score -= 400.0f;
+		if(BestT < 0 || Score < Best)
 		{
-			aCand[NumCand] = t;
-			aScore[NumCand] = s;
-			NumCand++;
-		}
-		else
-		{
-			p = 0;
-			for(int c = 1; c < MaxCand; c++)
-				if(aScore[c] > aScore[p])
-					p = c;
-			if(s >= aScore[p])
-				continue;
-			aCand[p] = t;
-			aScore[p] = s;
-		}
-	}
-	if(NumCand <= 0)
-		return;
-
-	float Best = 0.0f;
-	int BestT = -1, BestN = -1;
-	for(int c = 0; c < NumCand; c++)
-	{
-		const CGameContext::CBotThrowTarget &T = pGS->m_aBotThrowTargets[aCand[c]];
-		for(int n = 0; n < pGS->m_NumBotNav; n += 2)
-		{
-			vec2 S = pGS->m_aBotNav[n].m_Pos;
-			float dStand = distance(MyPos, S);
-			if(dStand > 560.0f)
-				continue;
-			// the cluster has to sit between the prey and us, otherwise the
-			// drag just slides the victim past it
-			float Miss = BotSegmentMiss(T.m_Pos, PreyPos, S);
-			if(Miss > T.m_Radius + 30.0f)
-				continue;
-			float Along = dot(T.m_Pos - PreyPos, S - PreyPos);
-			if(Along < 24.0f)
-				continue;
-			float Score = Miss * 2.5f + dStand * 0.55f +
-				distance(PreyPos, T.m_Pos) * 0.35f + BotSpikePenalty(T.m_Flags) * 0.5f +
-				frandom() * 60.0f;
-			if(aCand[c] == m_ThrowIdx)
-				Score -= 150.0f; // stick to the plan that is already working
-			if(BestT < 0 || Score < Best)
-			{
-				Best = Score;
-				BestT = aCand[c];
-				BestN = n;
-			}
+			Best = Score;
+			BestT = t;
 		}
 	}
 	if(BestT < 0)
 		return;
-	if(g_Config.m_SvBotDebug && BestT != m_ThrowIdx)
+	m_ThrowIdx = BestT;
+
+	// fng_trainbot: stand at the body, not at the far end of a drag line. Every
+	// recorded throw started from next to the victim, and the rope only bites at
+	// about 30px, so a stand point further away cannot even hook him. The feet
+	// line up under the teeth and then climb: that is the whole throw.
+	{
+		const CGameContext::CBotThrowTarget &BT = pGS->m_aBotThrowTargets[BestT];
+		// ... but if somebody has already made this very throw, copy where they
+		// stood. That is the whole point of the book: a person's spot replaces
+		// our guess, and a miss we both tried from is not repeated.
+		vec2 Learned;
+		bool HaveLearned = pGS->BotRecipeStand(BT.m_Pos, PreyPos, &Learned);
+		if(HaveLearned)
+			m_ThrowStand = Learned;
+		else
+		{
+			// fng_trainbot: the hook pulls the body towards whoever holds the rope,
+			// with a force that grows with the distance (gamecore), and the
+			// downward half of that pull is damped to 30% (HookVel.y *= 0.3).
+			// So a body can only be *lifted* from above: standing next to it on
+			// the same floor drags it sideways along the ground, which is exactly
+			// the throw that never worked. The recorded throws all ended with
+			// the thrower up at the teeth and the body 215..368px higher, x never
+			// changing. So the stance belongs over the body, near the cluster —
+			// still well inside the 380px rope.
+			m_ThrowStand = vec2(
+				PreyPos.x + clamp(BT.m_Pos.x - PreyPos.x, -110.0f, 110.0f),
+				min(PreyPos.y, BT.m_Pos.y + 40.0f));
+		}
+		// never plan a stance inside the teeth
+		if(pGS->Collision()->GetCollisionAt(m_ThrowStand.x, m_ThrowStand.y) & BOT_DANGER_MASK)
+			m_ThrowStand = vec2(PreyPos.x, PreyPos.y + 22.0f);
+		// and never out of the rope's reach
+		if(distance(PreyPos, m_ThrowStand) > 330.0f)
+			m_ThrowStand = vec2(PreyPos.x, PreyPos.y + 22.0f);
+		m_ThrowLearned = HaveLearned;
+	}
+
+	if(g_Config.m_SvBotDebug)
 	{
 		const CGameContext::CBotThrowTarget &T = pGS->m_aBotThrowTargets[BestT];
 		char aBuf[192];
 		str_format(aBuf, sizeof(aBuf),
-			"bot throw: cluster %d at %.0f,%.0f r%.0f -> stand at %.0f,%.0f",
-			BestT, T.m_Pos.x, T.m_Pos.y, T.m_Radius, pGS->m_aBotNav[BestN].m_Pos.x,
-			pGS->m_aBotNav[BestN].m_Pos.y);
+			"bot throw: cluster %d at %.0f,%.0f r%.0f is %.0fpx ABOVE the body -> stand at %.0f,%.0f%s",
+			BestT, T.m_Pos.x, T.m_Pos.y, T.m_Radius, PreyPos.y - T.m_Pos.y,
+			m_ThrowStand.x, m_ThrowStand.y, m_ThrowLearned ? " [learned]" : "");
 		pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
-	}
-	m_ThrowIdx = BestT;
-	m_ThrowStand = pGS->m_aBotNav[BestN].m_Pos;
-
-	// fng_trainbot: a nav point is only a rough spot on the right shelf. What
-	// actually decides the throw is the line prey -> cluster, extended past the
-	// cluster: the victim is dragged *along that line*, and standing a few
-	// pixels off it made the drag run parallel to the teeth and miss the kill
-	// (the log showed the body sliding past cluster 30 five pixels to the side).
-	// So snap the stand onto that line — staying on the shelf and out of the
-	// spikes, and letting a same-level spot beat one far below.
-	{
-		const CGameContext::CBotThrowTarget &BT = pGS->m_aBotThrowTargets[BestT];
-		vec2 S = m_ThrowStand;
-		if(fabsf(BT.m_Pos.y - PreyPos.y) > 2.0f)
-		{
-			float t = (S.y - PreyPos.y) / (BT.m_Pos.y - PreyPos.y);
-			if(t > 0.0f)
-			{
-				float IdealX = PreyPos.x + t * (BT.m_Pos.x - PreyPos.x);
-				float Delta = clamp(IdealX - S.x, -220.0f, 220.0f);
-				float NX = S.x + Delta;
-				if(!(pGS->Collision()->GetCollisionAt(NX, S.y) & BOT_DANGER_MASK) &&
-					!(pGS->Collision()->GetCollisionAt(NX, S.y - 24.0f) & BOT_DANGER_MASK))
-					m_ThrowStand.x = NX;
-			}
-		}
 	}
 }
 
@@ -1070,6 +1088,8 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		m_ClimbingUp = false;
 		m_BoostTicks = 0;
 		m_BackoffTicks = 0;
+		m_SwingTicks = 0;
+		m_SwingCooldown = 0;
 		m_JumpTicks = 0;
 		m_JumpCooldown = 0;
 		m_ThrowIdx = -1;
@@ -1483,7 +1503,7 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	// enemy when there is one, otherwise the patrol point of the chosen floor
 	vec2 Goal = pTarget ? pTarget->m_Pos : m_NavGoal;
 	if(pCarried && HaveSpike)
-		Goal = m_ThrowStand;
+		Goal = SpikePos; // the teeth, not a stand spot: the way up is the target
 	bool HaveGoal = pTarget != 0 || (pGS->m_NumBotNav > 0 && m_NavIdx >= 0) || (pCarried && HaveSpike);
 
 	// --- vertical states: hook-climb up, hook-boost forward ---
@@ -1503,7 +1523,13 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			Climbing = false;
 		}
 	}
-	if(!pCarried && m_BackoffTicks <= 0 && HaveGoal && !Boosting)
+	// fng_trainbot: climbing is allowed while dragging too, and that is the
+	// whole point of the new throw. A recorded throw lifted the body 283px by
+	// the hooker going *up* — the rope carries what is under him, and a body
+	// that is dragged sideways simply slides off. Climbing used to be switched
+	// off whenever a body was on the rope, which is precisely what made the
+	// upward lift impossible.
+	if(m_BackoffTicks <= 0 && HaveGoal && !Boosting && (!pCarried || (pCarried && HaveSpike)))
 	{
 		float dy = Goal.y - MyPos.y;
 		float hd = fabsf(Goal.x - MyPos.x);
@@ -1536,7 +1562,62 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	}
 	if(m_BoostCooldown > 0)
 		m_BoostCooldown--;
-	if(!pCarried && !Climbing && !Boosting && m_BackoffTicks <= 0 &&
+	if(m_SwingCooldown > 0)
+		m_SwingCooldown--;
+
+	// fng_trainbot: swinging. Only on the way to something, only when the way is
+	// long, and never while a body is on the rope — a swing takes the hook away
+	// from the throw, which is the one thing that must not be interrupted.
+	bool Swinging = m_SwingTicks > 0;
+	if(Swinging)
+	{
+		m_SwingTicks--;
+		// the rope only helps while we are actually gaining speed along it; once
+		// the swing has carried us past its apex it is just dead weight
+		int Speed = (int)(pMe->GetVel().x * (float)m_SwingDir);
+		bool Past = Speed <= m_SwingBestSpeed - 6;
+		if(distance(MyPos, Goal) < 260.0f || Past ||
+			(pMe->IsGrounded() && m_SwingTicks < 20) || !pMe->IsHookGrabbed())
+		{
+			m_SwingTicks = 0;
+			m_SwingCooldown = 24;
+			Swinging = false;
+		}
+		else if(Speed > m_SwingBestSpeed)
+			m_SwingBestSpeed = Speed;
+	}
+	if(!Swinging && !pCarried && !Climbing && !Boosting && !HammerTactic &&
+		m_BackoffTicks <= 0 && m_SwingCooldown <= 0 && HaveGoal)
+	{
+		float d = distance(MyPos, Goal);
+		float ddx = Goal.x - MyPos.x;
+		// a swing carries a few hundred pixels, so swinging at a goal on the
+		// far side of the map is theatre: it burns the hook and the cooldown
+		// and the bot ends up exactly where it started. Only swing at something
+		// a couple of swings can actually add up to.
+		if(d > 480.0f && d < 1800.0f && fabsf(ddx) > 200.0f)
+		{
+			vec2 A;
+			if(BotFindSwingAnchor(pGS, MyPos, Goal, &A))
+			{
+				m_SwingAnchor = A;
+				m_SwingTicks = 30;
+				m_SwingCooldown = 40;
+				m_SwingDir = ddx > 0.0f ? 1 : -1;
+				m_SwingBestSpeed = 0;
+				Swinging = true;
+				if(g_Config.m_SvBotDebug)
+				{
+					char aBuf[160];
+					str_format(aBuf, sizeof(aBuf), "bot %d: swing at %.0f,%.0f towards %.0f,%.0f",
+						ClientID, A.x, A.y, Goal.x, Goal.y);
+					pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+				}
+			}
+		}
+	}
+
+	if(!pCarried && !Climbing && !Boosting && !Swinging && m_BackoffTicks <= 0 &&
 		m_BoostCooldown <= 0 && HaveGoal)
 	{
 		float d = distance(MyPos, Goal);
@@ -1570,18 +1651,28 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	}
 	else if(pCarried)
 	{
-		// fng_trainbot: reel the victim along the line that runs through the
-		// spikes — the hook does the pulling, the feet only pick the angle
+		// fng_trainbot: the recorded throws all went straight up. The feet line
+		// up under the teeth and then climb, and the rope walks the body up on
+		// top of the hooker. So: get under the cluster, then go up — never walk
+		// away along the shelf, which is what used to slide the body past the
+		// teeth and end 170..545px short every time.
 		if(HaveSpike)
 		{
-			float dx = m_ThrowStand.x - MyPos.x;
-			float d = distance(MyPos, m_ThrowStand);
-			// stop just short of the cluster: close enough to drag him in,
-			// far enough that the same tiles do not eat our own tee
-			if(d > max(34.0f, SpikeR + 20.0f))
-				Dir = dx > 4.0f ? 1 : (dx < -4.0f ? -1 : (m_IdleDir ? m_IdleDir : 1));
+			float dxs = SpikePos.x - MyPos.x;
+			float dxsBody = pCarried->m_Pos.x - MyPos.x;
+			// stay under the body while it is still below us: the rope only
+			// lifts what is roughly underneath, sideways and the body slides off
+			if(pCarried->m_Pos.y > MyPos.y - 60.0f)
+			{
+				float Want = fabsf(dxsBody) > 12.0f ? dxsBody : dxs;
+				Dir = fabsf(Want) > 12.0f ? (Want > 0.0f ? 1 : -1) : 0;
+			}
 			else
-				Dir = 0;
+			{
+				// we are level with the body or above it: the rest of the lift is
+				// the hook-climb above, which the vertical state handles
+				Dir = fabsf(dxs) > 10.0f ? (dxs > 0.0f ? 1 : -1) : 0;
+			}
 		}
 		else
 		{
@@ -1592,6 +1683,15 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	}
 	else if(Boosting)
 		Dir = m_BoostDir;
+	else if(Swinging)
+	{
+		// fng_trainbot: steer through the swing. The rope decides the arc, the
+		// feet only decide how much of it we keep: aim at the goal and let the
+		// air control bend the flight, which is exactly what a person does and
+		// what makes a swinging bot much harder to shoot than a walking one.
+		float dsw = Goal.x - MyPos.x;
+		Dir = fabsf(dsw) > 24.0f ? (dsw > 0.0f ? 1 : -1) : m_SwingDir;
+	}
 	else if(HammerTactic)
 	{
 		// fng_trainbot: hammer throw — first get to the far side of the body so
@@ -1819,7 +1919,10 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		m_LastPos = MyPos;
 		m_StuckTick = Tick;
 	}
-	bool WantJump = m_JumpTicks > 0 || FlingJump;
+	// fng_trainbot: swing off the mark like a person — a running jump into the
+	// rope turns ground speed into the arc, a standing start throws it away
+	bool SwingJump = Swinging && pMe->IsGrounded() && m_SwingTicks > 12;
+	bool WantJump = m_JumpTicks > 0 || FlingJump || SwingJump;
 	if(m_JumpTicks > 0) m_JumpTicks--;
 	if(m_JumpCooldown > 0) m_JumpCooldown--;
 
@@ -1836,6 +1939,10 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		if(pCarried)
 			WantHook = true;
 		else if(Climbing || Boosting)
+			WantHook = true;
+		// fng_trainbot: a swing is nothing without the rope in the anchor — this
+		// is the whole difference between crossing the map and jogging across it
+		else if(Swinging)
 			WantHook = true;
 		// fng_trainbot: during a hammer throw the rope would pull the body
 		// away from the teeth (it drifts towards the hooker), so the hammer
@@ -1951,7 +2058,7 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	}
 
 	// --- shooting ---
-	bool Busy = m_BackoffTicks > 0 || JustReleased || Climbing || Boosting || pCarried;
+	bool Busy = m_BackoffTicks > 0 || JustReleased || Climbing || Boosting || pCarried || Swinging;
 	bool WantFire = false;
 	if(!Busy && !pMe->IsFrozen())
 	{
@@ -2087,7 +2194,16 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	if(WantHook)
 	{
 		int HookState = pMe->GetHookState();
-		if(HookState == HOOK_FLYING || HookState == HOOK_GRABBED)
+		int HookedID = pMe->GetHookedPlayerID();
+		// fng_trainbot: HOOK_GRABBED means "attached to *something*" — the
+		// engine uses the same state for a body and for a wall, and only
+		// m_HookedPlayer tells them apart. Holding the button on a wall grab
+		// kept the rope out for good, and the bot could never fire again, which
+		// is why it stood next to a frozen body and never picked him up: one
+		// unlucky hook into the floor and the throw tactic was dead for that
+		// spawn. So the button is held only while the rope is in the air or on
+		// a player, and tapped otherwise.
+		if(HookState == HOOK_FLYING || (HookState == HOOK_GRABBED && HookedID >= 0))
 			m_HookEmit = 1;
 		else
 			m_HookEmit = m_HookEmit ? 0 : 1; // tap: 1,0,1,0…

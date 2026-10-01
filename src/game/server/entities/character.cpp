@@ -567,6 +567,9 @@ void CCharacter::OnHookedPlayer(CCharacter *pFrom)
 	Hit(pHookPlayer->GetCID(), WEAPON_RIFLE);
 	// fng_trainbot: the hooker gloats in chat when he froze someone
 	GameServer()->BotTauntOnFreeze(pHookPlayer->GetCID(), m_pPlayer->GetCID());
+	// fng_trainbot: ... and the input that did it is filed under FREEZE, so
+	// "what does it take to freeze somebody" is a question the log can answer
+	GameServer()->BotNoteFreeze(pHookPlayer->GetCID(), m_pPlayer->GetCID());
 
 	// feedback, like a laser freeze
 	pFrom->SetEmote(EMOTE_HAPPY, Server()->Tick() + Server()->TickSpeed());
@@ -1164,6 +1167,8 @@ bool CCharacter::TakeDamage(vec2 Force, int Dmg, int From, int Weapon)
 			Hit(From, Weapon);
 			// fng_trainbot: the shooter gloats in chat when he froze someone
 			GameServer()->BotTauntOnFreeze(From, m_pPlayer->GetCID());
+			// fng_trainbot: the input that did it is filed under FREEZE
+			GameServer()->BotNoteFreeze(From, m_pPlayer->GetCID());
 
 			//set attacker's face to happy (taunt!)
 			if (From >= 0 && From != m_pPlayer->GetCID() && GameServer()->m_apPlayers[From])

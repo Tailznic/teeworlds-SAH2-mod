@@ -74,4 +74,18 @@ MACRO_CONFIG_INT(SvBotSkill, sv_bot_skill, -1, -1, 100, CFGFLAG_SERVER, "BOT: т
 MACRO_CONFIG_INT(SvBotThrow, sv_bot_throw, 1, 0, 1, CFGFLAG_SERVER, "BOT: закидывать зафризных в шипы (1=вкл — бот встаёт так, чтобы шипы легли на линию «жертва→бот» и затаскивает хуком)")
 MACRO_CONFIG_INT(SvBotRoam, sv_bot_roam, 35, 0, 100, CFGFLAG_SERVER, "BOT: % случаев, когда бот без противника идёт на случайный этаж карты, а не на этаж противника")
 MACRO_CONFIG_INT(SvBotDebug, sv_bot_debug, 0, 0, 1, CFGFLAG_SERVER, "BOT: печатать в лог разборы этажей/шипов и действия бота")
+// fng_trainbot: throw telemetry. Records the geometry of EVERY throw on the
+// server — bot or human: where the thrower stood, where the victim started, how
+// far the drag carried him and which spike cluster (if any) it reached. This is
+// the one thing the map data cannot tell us, because the useful stand spots are
+// the ones a person finds by feel. Feed it a real game and the bot learns the
+// actual throws of fng.map instead of guessing from the tile grid.
+MACRO_CONFIG_INT(SvBotThrowLog, sv_bot_throwlog, 0, 0, 1, CFGFLAG_SERVER, "BOT: подробный лог геометрии каждого броска в шипы (1=вкл; работает и для бросков живых игроков)")
+// freezing happens several times a second, so its traces are far too noisy to
+// keep on by default: they are switched on when the question is "what does it
+// take to freeze somebody", and off again afterwards
+MACRO_CONFIG_INT(SvBotTraceFreeze, sv_bot_trace_freeze, 0, 0, 1, CFGFLAG_SERVER, "BOT: ещё и экспортировать траектории заморозок (очень много записей; включать на время обучения)")
+// the throw book lives next to the habit table and is read the same way
+MACRO_CONFIG_STR(SvBotThrowFile, sv_bot_throw_file, 64, "bot_throws.txt", CFGFLAG_SERVER, "BOT: файл с выученными бросками (где лежала жертва, где стоял бросатель, какие шипы), в папке сохранения")
+
 
