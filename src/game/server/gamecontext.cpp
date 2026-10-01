@@ -1025,10 +1025,13 @@ void CGameContext::BotRewardKill(int KillerCID, int VictimCID, int Weapon)
 
 	if(VictimCID >= 0 && VictimCID < MAX_CLIENTS && m_aIsBot[VictimCID])
 	{
-		// dying teaches the habit that was running — unless it was a rescue,
-		// that is the bravest thing a bot does and should not be punished
+		// Dying teaches the habit that was running — unless it was a rescue,
+		// that is the bravest thing a bot does and should not be punished.
+		// The blame is deliberately smaller than the reward for a kill: deaths
+		// are frequent and mostly noise, and at full size they cancelled out
+		// every spike kill, leaving the table flat.
 		int Action = m_aBotAI[VictimCID].GetAction();
-		float Blame = Action == CBotAI::BOTACT_RESCUE ? -1.0f : -2.0f;
+		float Blame = Action == CBotAI::BOTACT_RESCUE ? -0.5f : -1.2f;
 		m_aBotAI[VictimCID].RewardAction(this, Action, Blame);
 	}
 }

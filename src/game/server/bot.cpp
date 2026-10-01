@@ -110,10 +110,18 @@ static bool BotTeeInLine(CGameContext *pGS, vec2 a, vec2 b, int SelfCID, CCharac
 		CCharacter *pC = p->GetCharacter();
 		if(!pC || !pC->IsAlive() || pC == pTarget)
 			continue;
+		// a frozen tee lying on the floor is not a wall: it is half the height,
+		// shots go over a body on the ground, and a map full of frozen
+		// leftovers would otherwise leave the bot unable to shoot at all
+		if(pC->IsFrozen())
+			continue;
+		// and only somebody standing between us at our own height can eat the shot
+		if(fabsf(pC->m_Pos.y - a.y) > 70.0f)
+			continue;
 		float Along = dot(pC->m_Pos - a, u);
 		if(Along < 40.0f || Along > Len - 20.0f) // beside us or past him
 			continue;
-		if(distance(pC->m_Pos, a + u * Along) < 34.0f)
+		if(distance(pC->m_Pos, a + u * Along) < 30.0f)
 			return true;
 	}
 	return false;
@@ -370,24 +378,37 @@ const char *CBotAI::ActionName(int Action)
 }
 
 // fng_trainbot: the reward. Whatever habit the bot was following when the
-// result arrived gets the credit or the blame; every other habit drifts the
-// other way, so the table slowly concentrates on what actually works. Weights
-// are kept inside 0.05..0.95 — a bot that decides once and never changes its
-// mind is just as dumb as one that never decides at all.
+// result arrived gets the credit or the blame. The pull-back towards the
+// average used to be 12% per event, which was a spring so stiff that no
+// amount of play could ever separate the habits: after hours the table sat at
+// 0.19..0.21 everywhere, i.e. the bot had learned nothing. It is now a gentle
+// 1.5% nudge that only stops one habit from eating the whole table, and the
+// weights are renormalised so every bot carries the same total probability.
 void CBotAI::RewardAction(CGameContext *pGS, int Action, float Amount)
 {
 	if(!g_Config.m_SvBotLearn || !pGS || Action < 0 || Action >= NUM_BOTACTIONS)
 		return;
 
 	float Rate = g_Config.m_SvBotLearnRate / 100.0f;
-	float Delta = Amount * Rate * 0.08f;
+	float Delta = Amount * Rate * 0.06f;
 	float Before = m_aWeights[Action];
 
-	m_aWeights[Action] = clamp(m_aWeights[Action] + Delta, 0.05f, 0.95f);
-	float Others = (1.0f - m_aWeights[Action]) / (float)(NUM_BOTACTIONS - 1);
+	m_aWeights[Action] = clamp(m_aWeights[Action] + Delta, 0.02f, 0.95f);
+
+	// weak mean reversion: keeps the table from collapsing into one habit
 	for(int i = 0; i < NUM_BOTACTIONS; i++)
 		if(i != Action)
-			m_aWeights[i] = clamp(mix(m_aWeights[i], Others, 0.12f), 0.05f, 0.95f);
+			m_aWeights[i] = clamp(mix(m_aWeights[i], 0.2f, 0.015f), 0.02f, 0.95f);
+
+	// renormalise: probabilities are compared against each other, and a bot
+	// whose table happens to sum to 1.14 would otherwise play faster than one
+	// summing to 0.91 for no reason at all
+	float Sum = 0.0f;
+	for(int i = 0; i < NUM_BOTACTIONS; i++)
+		Sum += m_aWeights[i];
+	if(Sum > 0.0f)
+		for(int i = 0; i < NUM_BOTACTIONS; i++)
+			m_aWeights[i] = clamp(m_aWeights[i] / Sum, 0.01f, 0.90f);
 
 	if(g_Config.m_SvBotDebug && fabsf(m_aWeights[Action] - Before) > 0.001f)
 	{
@@ -1104,10 +1125,14 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			Dir = dx != 0.0f ? (dx > 0.0f ? -1 : 1) : m_StrafeDir; // too close: make space
 		else
 		{
-			// engagement band: patrol left-right instead of standing still
-			if(--m_StrafeTicks <= 0 || StepAside)
+			// engagement band: patrol left-right instead of standing still.
+			// StepAside must NOT re-roll every tick — that is not "changing
+			// sides", that is a tee vibrating on the spot. The side is chosen
+			// once and kept until the timer runs out, and even then only with
+			// a coin flip, so the walk reads as a person picking a spot.
+			if(--m_StrafeTicks <= 0)
 			{
-				m_StrafeTicks = 25 + (int)(frandom() * 25.0f);
+				m_StrafeTicks = 40 + (int)(frandom() * 40.0f);
 				m_StrafeDir = frandom() < 0.5f ? -1 : 1;
 			}
 			Dir = m_StrafeDir;
