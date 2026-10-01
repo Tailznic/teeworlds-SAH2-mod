@@ -243,10 +243,43 @@ public:
 		vec2 m_Pos;
 		signed char m_Band;   // 0 = low, 1 = mid (fight zone), 2 = high
 		signed char m_Side;   // -1 = left (red), 0 = centre, 1 = right (blue)
+		signed char m_Floor;  // index into m_aBotFloors, -1 = unclustered
 	};
 	CBotNavPoint m_aBotNav[MAX_BOT_NAV];
 	int m_NumBotNav;
 	void CollectBotNav();
+
+	// fng_trainbot: the map's "этажи" — nav points clustered by height. The bot
+	// hunts and patrols whole floors instead of stumbling over random tiles.
+	enum { MAX_BOT_FLOORS = 24 };
+	struct CBotFloor
+	{
+		float m_TopY, m_BottomY; // world Y span of the walkable surface
+		float m_MinX, m_MaxX;    // horizontal extent of the floor
+		int m_NumPoints;
+	};
+	CBotFloor m_aBotFloors[MAX_BOT_FLOORS];
+	int m_NumBotFloors;
+	void CollectBotFloors();
+	int BotFloorAt(vec2 Pos) const;
+	int BotNavPointOnFloor(int Floor, vec2 Near, int Spread, vec2 *pOut) const;
+
+	// fng_trainbot: spike clusters, one per throw target. A victim on the hook
+	// drifts towards the hooker, so a "throw" is pure geometry: stand where the
+	// cluster lands on the line prey -> bot and reel in.
+	enum { MAX_BOT_THROW_TARGETS = 128 };
+	struct CBotThrowTarget
+	{
+		vec2 m_Pos;      // cluster centre
+		int m_Flags;     // spike colour flags of the cluster
+		int m_Count;     // spike tiles in the cluster
+		float m_Radius;  // half diagonal: how close the drag line must pass
+		int m_Floor;     // floor the cluster belongs to, -1 = none
+	};
+	CBotThrowTarget m_aBotThrowTargets[MAX_BOT_THROW_TARGETS];
+	int m_NumBotThrowTargets;
+	void CollectBotThrowTargets();
+
 
 	// SAH: spike-death melting ring animation state (per victim, position is static)
 	struct CDeathAnim

@@ -49,6 +49,8 @@ void CGameContext::Construct(int Resetting)
 	}
 	m_NumBotSpikes = 0;
 	m_NumBotNav = 0;
+	m_NumBotFloors = 0;
+	m_NumBotThrowTargets = 0;
 
 	m_pController = 0;
 	m_VoteCloseTime = 0;
@@ -952,6 +954,25 @@ void CGameContext::CreateConfiguredBots()
 
 void CGameContext::TickBots()
 {
+	// fng_trainbot: heartbeat — if this line stops repeating, the world is
+	// paused or bots were never created, and everything below is dead
+	if(g_Config.m_SvBotDebug)
+	{
+		static int s_Heartbeat = 0;
+		if(++s_Heartbeat >= 500)
+		{
+			s_Heartbeat = 0;
+			int Alive = 0;
+			for(int i = 0; i < MAX_CLIENTS; i++)
+				if(m_aIsBot[i] && m_apPlayers[i] && m_apPlayers[i]->GetCharacter())
+					Alive++;
+			char aBuf[192];
+			str_format(aBuf, sizeof(aBuf), "tickbots: paused=%d, bots with body=%d",
+				(int)m_World.m_Paused, Alive);
+			Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+		}
+	}
+
 	if(m_World.m_Paused)
 		return;
 	for(int i = 0; i < MAX_CLIENTS; i++)
@@ -1060,7 +1081,377 @@ void CGameContext::CollectBotNav()
 	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
 }
 
+// fng_trainbot: group the walkable shelves into the map's floors ("этажи"). Rows
+// A floor is a real walkable surface (a row of solid tiles with clean air
+// above), not a row of nav points: an FNG map is peppered with platforms at
+// every height, and clustering those chains the whole map into one level. Rows
+// a tile apart that overlap horizontally are one level (a step, a slope).
+void CGameContext::CollectBotFloors()
+{
+	m_NumBotFloors = 0;
+	for(int i = 0; i < m_NumBotNav; i++)
+		m_aBotNav[i].m_Floor = -1;
+
+	CCollision *pCol = Collision();
+	const int W = pCol->GetWidth();
+	const int H = pCol->GetHeight();
+	if(W <= 0 || H <= 0)
+		return;
+
+	const int Danger = (int)CCollision::COLFLAG_DEATH |
+		(int)CCollision::COLFLAG_SPIKE_NORMAL | (int)CCollision::COLFLAG_SPIKE_RED |
+		(int)CCollision::COLFLAG_SPIKE_BLUE | (int)CCollision::COLFLAG_SPIKE_GOLD |
+		(int)CCollision::COLFLAG_SPIKE_GREEN | (int)CCollision::COLFLAG_SPIKE_PURPLE;
+	const int MinRun = 5; // under 160px of ground it is a ledge, not a floor
+	const int MaxCand = 96;
+
+	struct CCand
+	{
+		int m_Row;
+		float m_MinX, m_MaxX;
+		int m_Len;
+	};
+	CCand aCand[MaxCand];
+	int NumCand = 0;
+
+	// every row that carries walkable ground somewhere becomes one candidate,
+	// spanning all of its long-enough runs
+	for(int y = 1; y < H - 2; y++)
+	{
+		float RowMin = 1e9f, RowMax = -1e9f;
+		int RowLen = 0, Run = 0, RunMin = 0;
+		for(int x = 0; x <= W; x++)
+		{
+			bool Surf = false;
+			if(x < W)
+			{
+				float px = x * 32.0f + 16.0f;
+				float py = y * 32.0f + 16.0f;
+				int Here = pCol->GetCollisionAt(px, py);
+				int Up = pCol->GetCollisionAt(px, py - 32.0f);
+				int Up2 = pCol->GetCollisionAt(px, py - 64.0f);
+				Surf = (Here & CCollision::COLFLAG_SOLID) != 0 &&
+					!(Up & (CCollision::COLFLAG_SOLID | Danger)) &&
+					!(Up2 & (CCollision::COLFLAG_SOLID | Danger));
+			}
+			if(Surf)
+			{
+				if(!Run)
+					RunMin = x;
+				Run++;
+			}
+			else
+			{
+				if(Run >= MinRun)
+				{
+					if(RunMin * 32.0f < RowMin)
+						RowMin = RunMin * 32.0f;
+					if((RunMin + Run) * 32.0f > RowMax)
+						RowMax = (RunMin + Run) * 32.0f;
+					RowLen += Run;
+				}
+				Run = 0;
+			}
+		}
+		if(RowLen >= MinRun && NumCand < MaxCand)
+		{
+			aCand[NumCand].m_Row = y;
+			aCand[NumCand].m_MinX = RowMin;
+			aCand[NumCand].m_MaxX = RowMax;
+			aCand[NumCand].m_Len = RowLen;
+			NumCand++;
+		}
+	}
+
+	// merge the rows of one level into one floor
+	CCand aFloor[MaxCand];
+	int NumFloor = 0;
+	for(int i = 0; i < NumCand; i++)
+	{
+		bool Merged = false;
+		if(NumFloor)
+		{
+			CCand &P = aFloor[NumFloor - 1];
+			if(aCand[i].m_Row - P.m_Row <= 1 && aCand[i].m_MinX < P.m_MaxX &&
+				aCand[i].m_MaxX > P.m_MinX)
+			{
+				if(aCand[i].m_MinX < P.m_MinX)
+					P.m_MinX = aCand[i].m_MinX;
+				if(aCand[i].m_MaxX > P.m_MaxX)
+					P.m_MaxX = aCand[i].m_MaxX;
+				P.m_Len += aCand[i].m_Len;
+				P.m_Row = aCand[i].m_Row; // the lower of the two is what you walk on
+				Merged = true;
+			}
+		}
+		if(!Merged && NumFloor < MaxCand)
+			aFloor[NumFloor++] = aCand[i];
+	}
+
+	// a map can hide a hundred ledges; the ones people actually fight on are
+	// the long ones, so keep the widest floors and number them top (0) to pit
+	if(NumFloor > MAX_BOT_FLOORS)
+	{
+		for(int i = 1; i < NumFloor; i++)
+		{
+			CCand K = aFloor[i];
+			int j = i - 1;
+			while(j >= 0 && aFloor[j].m_Len < K.m_Len)
+			{
+				aFloor[j + 1] = aFloor[j];
+				j--;
+			}
+			aFloor[j + 1] = K;
+		}
+		NumFloor = MAX_BOT_FLOORS;
+		for(int i = 1; i < NumFloor; i++)
+		{
+			CCand K = aFloor[i];
+			int j = i - 1;
+			while(j >= 0 && aFloor[j].m_Row > K.m_Row)
+			{
+				aFloor[j + 1] = aFloor[j];
+				j--;
+			}
+			aFloor[j + 1] = K;
+		}
+	}
+
+	for(int f = 0; f < NumFloor && f < MAX_BOT_FLOORS; f++)
+	{
+		CBotFloor &F = m_aBotFloors[m_NumBotFloors];
+		F.m_BottomY = aFloor[f].m_Row * 32.0f; // the top edge of the ground
+		F.m_TopY = F.m_BottomY - 48.0f; // a body's worth of air above it
+		F.m_MinX = aFloor[f].m_MinX;
+		F.m_MaxX = aFloor[f].m_MaxX;
+		F.m_NumPoints = 0;
+		m_NumBotFloors++;
+	}
+
+	// give every nav point its floor: the level at its own height that it
+	// actually stands on, not just the nearest line drawn on the map
+	for(int i = 0; i < m_NumBotNav; i++)
+	{
+		int Best = -1;
+		float BestD = 1e9f;
+		for(int f = 0; f < m_NumBotFloors; f++)
+		{
+			const CBotFloor &F = m_aBotFloors[f];
+			float d = fabsf(m_aBotNav[i].m_Pos.y - (F.m_BottomY - 16.0f));
+			if(d > 40.0f || d >= BestD)
+				continue;
+			if(m_aBotNav[i].m_Pos.x < F.m_MinX - 16.0f ||
+				m_aBotNav[i].m_Pos.x > F.m_MaxX + 16.0f)
+				continue;
+			BestD = d;
+			Best = f;
+		}
+		if(Best < 0)
+			continue;
+		m_aBotNav[i].m_Floor = (signed char)Best;
+		m_aBotFloors[Best].m_NumPoints++;
+	}
+
+	// fight bands follow the real floor layout instead of guessed tile rows:
+	// top third = high ground, middle = the lane people fight in, bottom = pit
+	for(int f = 0; f < m_NumBotFloors; f++)
+	{
+		int Band = 1;
+		if(m_NumBotFloors > 2)
+			Band = f * 3 < m_NumBotFloors ? 2 : (f * 3 < m_NumBotFloors * 2 ? 1 : 0);
+		for(int i = 0; i < m_NumBotNav; i++)
+			if(m_aBotNav[i].m_Floor == f)
+				m_aBotNav[i].m_Band = (signed char)Band;
+	}
+
+	if(g_Config.m_SvBotDebug)
+	{
+		char aBuf[192];
+		for(int f = 0; f < m_NumBotFloors; f++)
+		{
+			str_format(aBuf, sizeof(aBuf), "bot floor %d: y %.0f..%.0f x %.0f..%.0f points=%d",
+				f, m_aBotFloors[f].m_TopY, m_aBotFloors[f].m_BottomY,
+				m_aBotFloors[f].m_MinX, m_aBotFloors[f].m_MaxX, m_aBotFloors[f].m_NumPoints);
+			Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+		}
+		str_format(aBuf, sizeof(aBuf), "bot floors: %d", m_NumBotFloors);
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+	}
+}
+
+// which floor is this position on (-1 = mid-air between levels, or a ledge the
+// bot does not track). The height alone is not enough: two shelves can sit at
+// the same Y on opposite sides of the map and are not the same place. The
+// window is deliberately narrow — a tee in the middle of a jump belongs to no
+// floor, and the bot remembers the one it left instead of guessing.
+int CGameContext::BotFloorAt(vec2 Pos) const
+{
+	int Best = -1;
+	float BestD = 1e9f;
+	for(int f = 0; f < m_NumBotFloors; f++)
+	{
+		const CBotFloor &F = m_aBotFloors[f];
+		float d = fabsf(Pos.y - (F.m_BottomY - 16.0f));
+		if(d > 64.0f || d >= BestD)
+			continue;
+		if(Pos.x < F.m_MinX - 32.0f || Pos.x > F.m_MaxX + 32.0f)
+			continue;
+		BestD = d;
+		Best = f;
+	}
+	return Best;
+}
+
+// a standable point of a given floor close to a position — the bot's way of
+// saying "go to that floor, over there"
+int CGameContext::BotNavPointOnFloor(int Floor, vec2 Near, int Spread, vec2 *pOut) const
+{
+	int Best = -1, Fallback = -1;
+	float BestD = 1e9f, FallbackD = 1e9f;
+	for(int i = 0; i < m_NumBotNav; i++)
+	{
+		const CBotNavPoint &P = m_aBotNav[i];
+		if(P.m_Floor != Floor)
+			continue;
+		float dx = fabsf(P.m_Pos.x - Near.x);
+		if(dx <= (float)Spread)
+		{
+			float d = fabsf(P.m_Pos.y - Near.y) * 2.0f + dx * frandom();
+			if(d < BestD)
+			{
+				BestD = d;
+				Best = i;
+			}
+		}
+		float dAll = distance(P.m_Pos, Near);
+		if(dAll < FallbackD)
+		{
+			FallbackD = dAll;
+			Fallback = i;
+		}
+	}
+	int Use = Best >= 0 ? Best : Fallback;
+	if(Use < 0)
+		return -1;
+	if(pOut)
+		*pOut = m_aBotNav[Use].m_Pos;
+	return Use;
+}
+
+// fng_trainbot: merge neighbouring spike tiles of the same colour into clusters.
+// One cluster is one throw target — far more useful than a thousand loose tiles.
+void CGameContext::CollectBotThrowTargets()
+{
+	m_NumBotThrowTargets = 0;
+	CCollision *pCol = Collision();
+	const int W = pCol->GetWidth();
+	const int H = pCol->GetHeight();
+	const int SpikeMask = (int)CCollision::COLFLAG_SPIKE_NORMAL | (int)CCollision::COLFLAG_SPIKE_RED |
+		(int)CCollision::COLFLAG_SPIKE_BLUE | (int)CCollision::COLFLAG_SPIKE_GOLD |
+		(int)CCollision::COLFLAG_SPIKE_GREEN | (int)CCollision::COLFLAG_SPIKE_PURPLE;
+
+	int *pKind = new int[(size_t)W * H];
+	char *pSeen = new char[(size_t)W * H];
+	for(int i = 0; i < W * H; i++)
+	{
+		pKind[i] = pCol->GetCollisionAt((i % W) * 32.0f + 16.0f, (i / W) * 32.0f + 16.0f) & SpikeMask;
+		pSeen[i] = 0;
+	}
+
+	int aStackX[2048], aStackY[2048];
+	static const int ax[8] = {1, -1, 0, 0, 1, -1, 1, -1};
+	static const int ay[8] = {0, 0, 1, -1, 1, -1, -1, 1};
+
+	for(int y = 0; y < H; y++)
+	{
+		for(int x = 0; x < W; x++)
+		{
+			int Kind = pKind[y * W + x];
+			if(!Kind || pSeen[y * W + x])
+				continue;
+			int Sp = 0;
+			aStackX[Sp] = x;
+			aStackY[Sp] = y;
+			Sp++;
+			pSeen[y * W + x] = 1;
+			int MinX = x, MaxX = x, MinY = y, MaxY = y, Num = 0;
+			while(Sp > 0)
+			{
+				Sp--;
+				int cx = aStackX[Sp], cy = aStackY[Sp];
+				Num++;
+				if(cx < MinX) MinX = cx;
+				if(cx > MaxX) MaxX = cx;
+				if(cy < MinY) MinY = cy;
+				if(cy > MaxY) MaxY = cy;
+				for(int d = 0; d < 8; d++)
+				{
+					int nx = cx + ax[d], ny = cy + ay[d];
+					if(nx < 0 || ny < 0 || nx >= W || ny >= H)
+						continue;
+					int ni = ny * W + nx;
+					if(pSeen[ni] || pKind[ni] != Kind)
+						continue;
+					pSeen[ni] = 1;
+					if(Sp < 2048)
+					{
+						aStackX[Sp] = nx;
+						aStackY[Sp] = ny;
+						Sp++;
+					}
+				}
+			}
+			if(m_NumBotThrowTargets >= MAX_BOT_THROW_TARGETS)
+			{
+				delete[] pKind;
+				delete[] pSeen;
+				return;
+			}
+			CBotThrowTarget &T = m_aBotThrowTargets[m_NumBotThrowTargets];
+			T.m_Pos = vec2((MinX + MaxX + 1) * 16.0f, (MinY + MaxY + 1) * 16.0f);
+			T.m_Flags = Kind;
+			T.m_Count = Num;
+			T.m_Radius = 0.5f * sqrtf((float)(MaxX - MinX + 1) * (MaxX - MinX + 1) +
+				(float)(MaxY - MinY + 1) * (MaxY - MinY + 1)) * 32.0f;
+			// which level this trap belongs to: same height (spikes sit on the
+			// ground or on a block above it) and inside the shelf's span
+			T.m_Floor = -1;
+			for(int f = 0; f < m_NumBotFloors; f++)
+			{
+				const CBotFloor &F = m_aBotFloors[f];
+				if(fabsf(T.m_Pos.y - (F.m_BottomY - 16.0f)) > 160.0f)
+					continue;
+				if(T.m_Pos.x < F.m_MinX || T.m_Pos.x > F.m_MaxX)
+					continue;
+				T.m_Floor = (signed char)f;
+				break;
+			}
+			m_NumBotThrowTargets++;
+		}
+	}
+
+	if(g_Config.m_SvBotDebug)
+	{
+		char aBuf[192];
+		str_format(aBuf, sizeof(aBuf), "bot throw targets: %d", m_NumBotThrowTargets);
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+		for(int i = 0; i < m_NumBotThrowTargets && i < 48; i++)
+		{
+			str_format(aBuf, sizeof(aBuf), "  target %d: (%.0f,%.0f) tiles=%d r=%.0f floor=%d flags=0x%x",
+				i, m_aBotThrowTargets[i].m_Pos.x, m_aBotThrowTargets[i].m_Pos.y,
+				m_aBotThrowTargets[i].m_Count, m_aBotThrowTargets[i].m_Radius,
+				m_aBotThrowTargets[i].m_Floor, m_aBotThrowTargets[i].m_Flags);
+			Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+		}
+	}
+
+	delete[] pKind;
+	delete[] pSeen;
+}
+
 void CGameContext::OnMessage(int MsgID, CUnpacker *pUnpacker, int ClientID)
+
+
 {
 	void *pRawMsg = m_NetObjHandler.SecureUnpackMsg(MsgID, pUnpacker);
 	CPlayer *pPlayer = m_apPlayers[ClientID];
@@ -2329,6 +2720,9 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 	// SAH: spike navigation targets + practice bots for this map
 	CollectBotSpikes();
 	CollectBotNav();
+	CollectBotFloors();
+	CollectBotThrowTargets();
+
 	CreateConfiguredBots();
 
 #ifdef CONF_DEBUG
@@ -2435,6 +2829,9 @@ void CGameContext::OnInit(IKernel *pKernel, IMap* pMap, CConfiguration* pConfigF
 	// SAH: spike navigation targets + practice bots for this map
 	CollectBotSpikes();
 	CollectBotNav();
+	CollectBotFloors();
+	CollectBotThrowTargets();
+
 	CreateConfiguredBots();
 
 #ifdef CONF_DEBUG

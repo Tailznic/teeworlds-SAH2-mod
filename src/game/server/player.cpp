@@ -393,7 +393,18 @@ void CPlayer::TryRespawn()
 	vec2 SpawnPos;
 
 	if(!GameServer()->m_pController->CanSpawn(m_Team, &SpawnPos))
+	{
+		// fng_trainbot: the usual reason a bot "does nothing" all game — it
+		// never got a body because the map offered no free spawn point
+		if(g_Config.m_SvBotDebug && Server()->Tick() % 200 == 0)
+		{
+			char aBuf[192];
+			str_format(aBuf, sizeof(aBuf), "player %d: spawn refused (team %d) at t=%d",
+				m_ClientID, m_Team, Server()->Tick());
+			GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+		}
 		return;
+	}
 
 	m_Spawning = false;
 	m_pCharacter = new(m_ClientID) CCharacter(&GameServer()->m_World);

@@ -63,3 +63,9 @@ MACRO_CONFIG_INT(SvSahCooldownRing, sv_sah_cooldown_ring, 1, 0, 1, CFGFLAG_SERVE
 // SAH: server-side practice bot
 MACRO_CONFIG_INT(SvBotCount, sv_bot_count, 1, 0, 4, CFGFLAG_SERVER, "SAH: сколько ботов добавлять при старте (слоты с конца; 0 = выкл)")
 MACRO_CONFIG_STR(SvBotName, sv_bot_name, 16, "Bot", CFGFLAG_SERVER, "SAH: имя бота")
+// fng_trainbot: how human the practice bot plays
+MACRO_CONFIG_INT(SvBotSkill, sv_bot_skill, -1, -1, 100, CFGFLAG_SERVER, "BOT: точность 0..100 (-1 = каждому боту свой случайный уровень; 100 = всегда попадает идеально)")
+MACRO_CONFIG_INT(SvBotThrow, sv_bot_throw, 1, 0, 1, CFGFLAG_SERVER, "BOT: закидывать зафризных в шипы (1=вкл — бот встаёт так, чтобы шипы легли на линию «жертва→бот» и затаскивает хуком)")
+MACRO_CONFIG_INT(SvBotRoam, sv_bot_roam, 35, 0, 100, CFGFLAG_SERVER, "BOT: % случаев, когда бот без противника идёт на случайный этаж карты, а не на этаж противника")
+MACRO_CONFIG_INT(SvBotDebug, sv_bot_debug, 0, 0, 1, CFGFLAG_SERVER, "BOT: печатать в лог разборы этажей/шипов и действия бота")
+
