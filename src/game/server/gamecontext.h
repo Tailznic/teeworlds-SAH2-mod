@@ -405,6 +405,10 @@ public:
 	virtual const char *Version();
 	virtual const char *NetVersion();
 
+	// fng_trainbot: bots on a team — the engine uses this to keep ticking the
+	// world when the server runs bots without a single network client
+	virtual int NumBots() const;
+
 	void SendRoundStats();
 	void SendRandomTrivia();
 

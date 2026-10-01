@@ -148,6 +148,11 @@ public:
 	virtual const char *GameType() = 0;
 	virtual const char *Version() = 0;
 	virtual const char *NetVersion() = 0;
+
+	// fng_trainbot: server-side bots are not network clients, so the engine
+	// counts them as nobody and the world stops ticking on a bot-only server.
+	// The game reports how many players of its own are alive to keep ticking.
+	virtual int NumBots() const = 0;
 };
 
 extern IGameServer *CreateGameServer();

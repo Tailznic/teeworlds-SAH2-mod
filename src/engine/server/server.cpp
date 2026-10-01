@@ -1892,7 +1892,9 @@ int CServer::Run()
 				m_CurrentGameTick++;
 				NewTicks++;
 
-				if(m_PlayerCount){
+				// fng_trainbot: bots live in game slots, not in network clients,
+				// so a server that runs only bots would sit frozen — count them
+				if(m_PlayerCount || GameServer()->NumBots()){
 					// apply new input
 					for(int c = 0; c < MAX_CLIENTS; c++)
 					{

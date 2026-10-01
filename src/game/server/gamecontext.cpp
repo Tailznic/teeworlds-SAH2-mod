@@ -953,6 +953,15 @@ void CGameContext::CreateConfiguredBots()
 	}
 }
 
+int CGameContext::NumBots() const
+{
+	int Num = 0;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+		if(m_aIsBot[i] && m_apPlayers[i])
+			Num++;
+	return Num;
+}
+
 // fng_trainbot: "ez" right after the freeze — the classic gloat. Only the
 // bot itself speaks, only into global chat, only at enemies, and never more
 // often than once per 5 seconds per bot (a hooker freezing a whole team
