@@ -438,7 +438,14 @@ void CGameContext::SendChat(int ChatterClientID, int Team, const char *pText, in
 	if(Team != CHAT_WHISPER_RECV && Team != CHAT_WHISPER_SEND){
 		char aBuf[256];
 		if(ChatterClientID >= 0 && ChatterClientID < MAX_CLIENTS)
-			str_format(aBuf, sizeof(aBuf), "%d:%d:%s: %s", ChatterClientID, Team, Server()->ClientName(ChatterClientID), pText);
+		{
+			// fng_trainbot: a bot slot has no engine client behind it, so
+			// ClientName() answers "(invalid)" — use the name we gave it
+			const char *pName = Server()->ClientName(ChatterClientID);
+			if(m_aIsBot[ChatterClientID] && m_apPlayers[ChatterClientID])
+				pName = m_apPlayers[ChatterClientID]->GetShownName();
+			str_format(aBuf, sizeof(aBuf), "%d:%d:%s: %s", ChatterClientID, Team, pName, pText);
+		}
 		else
 			str_format(aBuf, sizeof(aBuf), "*** %s", pText);
 		Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, Team!=CHAT_ALL?"teamchat":"chat", aBuf);
@@ -981,7 +988,7 @@ void CGameContext::BotTauntOnFreeze(int FreezerCID, int VictimCID)
 	if(Server()->Tick() - m_aBotTauntTick[FreezerCID] < Server()->TickSpeed() * 5)
 		return;
 	m_aBotTauntTick[FreezerCID] = Server()->Tick();
-	SendChat(FreezerCID, CHAT_ALL, "\xe2\x98\xbf" "ez"); // ♿ez
+	SendChat(FreezerCID, CHAT_ALL, "\xe2\x99\xbf" "ez"); // ♿ez
 }
 
 void CGameContext::TickBots()

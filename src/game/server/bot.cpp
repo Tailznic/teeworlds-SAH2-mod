@@ -62,6 +62,100 @@ static bool BotLineOfSight(CGameContext *pGS, vec2 a, vec2 b)
 	return pGS->Collision()->IntersectLine(a, b, 0, 0) == 0;
 }
 
+// fng_trainbot: the tee has its back to us, or is busy with somebody else —
+// that is the moment a human actually takes the shot instead of trading
+// shots head on
+static bool BotTargetDistracted(CCharacter *pT, vec2 MyPos, int Tick)
+{
+	if(!pT || !pT->IsAlive())
+		return false;
+
+	// facing: the aim input is a direction, so the sign of the dot product
+	// tells us whether he is looking our way or turned away
+	vec2 Aim = pT->GetAimVec();
+	float Len = length(Aim);
+	vec2 ToUs = MyPos - pT->m_Pos;
+	float D = length(ToUs);
+	if(Len > 1.0f && D > 60.0f)
+	{
+		if(dot(Aim, ToUs) / (Len * D) < -0.17f) // ~100 degrees and wider
+			return true;
+	}
+
+	// busy: shooting at somebody, dragging a body or hooked onto one
+	if(Tick - pT->GetLastAttackTick() < 20)
+		return true;
+	if(pT->GetHookedPlayerID() >= 0)
+		return true;
+	return false;
+}
+
+// fng_trainbot: a tee stands in the firing line. In FNG a shot stops on the
+// first body it meets, so shooting through a frozen teammate is the classic
+// "our own bot blocked the shot and we never noticed"
+static bool BotTeeInLine(CGameContext *pGS, vec2 a, vec2 b, int SelfCID, CCharacter *pTarget)
+{
+	vec2 L = b - a;
+	float Len = length(L);
+	if(Len < 1.0f)
+		return false;
+	vec2 u = L * (1.0f / Len);
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(i == SelfCID)
+			continue;
+		CPlayer *p = pGS->m_apPlayers[i];
+		if(!p)
+			continue;
+		CCharacter *pC = p->GetCharacter();
+		if(!pC || !pC->IsAlive() || pC == pTarget)
+			continue;
+		float Along = dot(pC->m_Pos - a, u);
+		if(Along < 40.0f || Along > Len - 20.0f) // beside us or past him
+			continue;
+		if(distance(pC->m_Pos, a + u * Along) < 34.0f)
+			return true;
+	}
+	return false;
+}
+
+// fng_trainbot: how many of our own team stand on that floor right now — two
+// bots on one level are one bot's worth of pressure
+static int BotTeammatesOnFloor(CGameContext *pGS, int SelfCID, int MyTeam, int Floor)
+{
+	int Num = 0;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(i == SelfCID)
+			continue;
+		CPlayer *p = pGS->m_apPlayers[i];
+		if(!p || p->GetTeam() != MyTeam || p->GetTeam() < TEAM_RED || p->GetTeam() > TEAM_BLUE)
+			continue;
+		CCharacter *pC = p->GetCharacter();
+		if(!pC || !pC->IsAlive())
+			continue;
+		if(pGS->BotFloorAt(pC->m_Pos) == Floor)
+			Num++;
+	}
+	return Num;
+}
+
+// ... a level nobody of the team holds, so the team spreads over the map
+// instead of stacking on one shelf
+static int BotPickUncoveredFloor(CGameContext *pGS, int SelfCID, int MyTeam)
+{
+	if(pGS->m_NumBotFloors <= 0)
+		return -1;
+	int aFree[24];
+	int nFree = 0;
+	for(int f = 0; f < pGS->m_NumBotFloors && nFree < 24; f++)
+		if(BotTeammatesOnFloor(pGS, SelfCID, MyTeam, f) == 0)
+			aFree[nFree++] = f;
+	if(nFree > 0)
+		return aFree[(int)(frandom() * nFree) % nFree];
+	return (int)(frandom() * pGS->m_NumBotFloors) % pGS->m_NumBotFloors;
+}
+
 // solid tile the hook can actually latch onto (unhookable tiles bounce it)
 static bool BotHookablePoint(CGameContext *pGS, vec2 p)
 {
@@ -674,12 +768,13 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		else if(pGS->m_NumBotFloors > 0 && MyFloor == m_FloorGoal &&
 			frandom() < 0.15f + Roam * 0.6f)
 			// nothing to do here anymore — take a walk, like someone hunting
-			// for a game (a floor is simply its number in the table)
-			m_FloorGoal = (int)(frandom() * pGS->m_NumBotFloors) % pGS->m_NumBotFloors;
+			// for a game. A level nobody of the team holds comes first, so
+			// the bots spread over the map instead of stacking on one shelf
+			m_FloorGoal = BotPickUncoveredFloor(pGS, ClientID, MyTeam);
 		else if(m_HomeFloor >= 0 && frandom() < 0.65f - Roam * 0.4f)
 			m_FloorGoal = m_HomeFloor; // otherwise the favourite floor wins
 		else if(pGS->m_NumBotFloors > 0)
-			m_FloorGoal = (int)(frandom() * pGS->m_NumBotFloors) % pGS->m_NumBotFloors;
+			m_FloorGoal = BotPickUncoveredFloor(pGS, ClientID, MyTeam);
 	}
 	int FloorPref = TargetFloor >= 0 ? TargetFloor : m_FloorGoal;
 
@@ -772,6 +867,13 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		}
 	}
 
+	// fng_trainbot: standing in the way is worse than standing still — when a
+	// teammate blocks our line of fire, step off the line instead of trading
+	// shots into his back. A player does it without thinking; the bot needs it
+	// written down.
+	bool StepAside = pTarget && !pTarget->IsFrozen() && !pCarried &&
+		BotTeeInLine(pGS, MyPos, pTarget->m_Pos, ClientID, pTarget);
+
 	// --- movement: take position, never just stand there ---
 	int Dir = 0;
 	if(m_BackoffTicks > 0)
@@ -831,7 +933,7 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		else
 		{
 			// engagement band: patrol left-right instead of standing still
-			if(--m_StrafeTicks <= 0)
+			if(--m_StrafeTicks <= 0 || StepAside)
 			{
 				m_StrafeTicks = 25 + (int)(frandom() * 25.0f);
 				m_StrafeDir = frandom() < 0.5f ? -1 : 1;
@@ -977,6 +1079,7 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 
 	// --- SAH/heals: frozen teammates are saved with pistol ---
 	CCharacter *pHeal = 0;
+	CCharacter *pHealThreat = 0;
 	if(pGS->m_pController->UsesSahScoring() && MyTeam >= TEAM_RED && MyTeam <= TEAM_BLUE)
 	{
 		float BestH = 0.0f;
@@ -999,6 +1102,39 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 				pHeal = pC;
 			}
 		}
+
+		// fng_trainbot: unpicking a teammate with an enemy standing over him
+		// is how the whole team ends up frozen — the freezer has to go first.
+		// A human reads that in half a second; the bot needs it spelled out.
+		if(pHeal)
+		{
+			float BestT = 0.0f;
+			for(int i = 0; i < MAX_CLIENTS; i++)
+			{
+				if(i == ClientID)
+					continue;
+				CPlayer *p = pGS->m_apPlayers[i];
+				if(!p || !BotIsEnemy(pSelf, p))
+					continue;
+				CCharacter *pC = p->GetCharacter();
+				if(!pC || !pC->IsAlive() || pC->IsFrozen())
+					continue;
+				float d = distance(pC->m_Pos, pHeal->m_Pos);
+				if(d > 700.0f)
+					continue;
+				if(!pHealThreat || d < BestT)
+				{
+					BestT = d;
+					pHealThreat = pC;
+				}
+			}
+			// close and aiming at us? even then the enemy wins the race
+			if(pHealThreat && BotTargetDistracted(pHealThreat, MyPos, Tick) == false &&
+				BotLineOfSight(pGS, MyPos, pHealThreat->m_Pos))
+				pHeal = 0; // fight first, rescue later
+			else if(pHealThreat && distance(pHealThreat->m_Pos, pHeal->m_Pos) < 260.0f)
+				pHeal = 0; // he is right on top of the rescue — deal with him
+		}
 	}
 
 	// --- shooting ---
@@ -1011,7 +1147,11 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		else if(pTarget && !pTarget->IsFrozen())
 		{
 			float d = distance(MyPos, pTarget->m_Pos);
-			if(d > 20.0f && d < 780.0f && BotLineOfSight(pGS, MyPos, pTarget->m_Pos))
+			// fng_trainbot: never shoot through a body. In FNG the bullet stops
+			// on the first tee it meets, so a frozen teammate in the line eats
+			// every shot and the bot wonders why nobody dies
+			if(d > 20.0f && d < 780.0f && BotLineOfSight(pGS, MyPos, pTarget->m_Pos) &&
+				!BotTeeInLine(pGS, MyPos, pTarget->m_Pos, ClientID, pTarget))
 				WantFire = true;
 		}
 	}
@@ -1021,6 +1161,14 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	// not be dropped because the bot decided to think.
 	if(WantFire && m_HoldFireTicks > 0)
 		WantFire = false;
+	// ... but hesitation is exactly what a person drops when the enemy turns
+	// its back or gets busy with somebody else — that is the free hit
+	if(!WantFire && pTarget && !pTarget->IsFrozen() && !Busy && !pMe->IsFrozen() &&
+		BotTargetDistracted(pTarget, MyPos, Tick) &&
+		distance(MyPos, pTarget->m_Pos) > 20.0f && distance(MyPos, pTarget->m_Pos) < 780.0f &&
+		BotLineOfSight(pGS, MyPos, pTarget->m_Pos) &&
+		!BotTeeInLine(pGS, MyPos, pTarget->m_Pos, ClientID, pTarget))
+		WantFire = true;
 	if(WantFire)
 		m_FireState = (m_FireState + 1) & INPUT_STATE_MASK;
 	else if(m_FireState & 1)

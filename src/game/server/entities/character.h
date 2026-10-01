@@ -87,6 +87,12 @@ public:
 	vec2 GetVel() const { return m_Core.m_Vel; }
 	class CPlayer *GetPlayer() { return m_pPlayer; }
 
+	// fng_trainbot: how the tee is aiming (a direction, not a position) and when
+	// it last attacked — that is what tells the bot "he is looking away" and
+	// "he is busy shooting at somebody else"
+	vec2 GetAimVec() const { return vec2(m_Input.m_TargetX, m_Input.m_TargetY); }
+	int GetLastAttackTick() const { return m_AttackTick; }
+
 	bool IsFrozen();
 
 	void SetKiller(int pKillerID, unsigned int pHookTicks);
