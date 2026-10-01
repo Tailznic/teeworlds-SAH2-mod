@@ -1710,7 +1710,7 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 
 	// fng_trainbot: one navigation goal — the throw spot when dragging, the
 	// enemy when there is one, otherwise the patrol point of the chosen floor
-	vec2 Goal = pTarget ? pTarget->m_Pos : m_NavGoal;
+	vec2 Goal = HammerTactic ? m_HammerStand : (pTarget ? pTarget->m_Pos : m_NavGoal);
 	if(pCarried && HaveSpike)
 		Goal = SpikePos; // the teeth, not a stand spot: the way up is the target
 	bool HaveGoal = pTarget != 0 || (pGS->m_NumBotNav > 0 && m_NavIdx >= 0) || (pCarried && HaveSpike);
@@ -1940,19 +1940,47 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		// But we walk to OUR level, not always to the enemy's: if a teammate
 		// already holds his shelf we take the one above or below, otherwise the
 		// whole team ends up shoulder to shoulder on one floor.
-		int ChaseFloor = TargetFloor;
+		int ChaseFloor = HammerTactic ? pGS->BotFloorAt(m_HammerStand) : TargetFloor;
 		float DTarget = distance(MyPos, pTarget->m_Pos);
 		// fng_trainbot: spreading the team over neighbouring shelves only makes
 		// sense once the fight is joined. Applied while still walking to the
 		// enemy it did the opposite: everybody left for a different level and
 		// nobody ever arrived (the log showed distances of 765..3500px and a
 		// hook that never touched anybody).
-		if(DTarget < 700.0f && m_FloorGoal >= 0 && m_FloorGoal != TargetFloor &&
+		if(!HammerTactic && DTarget < 700.0f && m_FloorGoal >= 0 && m_FloorGoal != TargetFloor &&
 			BotTeammatesOnFloor(pGS, ClientID, MyTeam, TargetFloor) > 0)
 			ChaseFloor = m_FloorGoal;
 		bool OtherFloor = ChaseFloor >= 0 && MyFloor >= 0 && ChaseFloor != MyFloor;
 		bool InReach = hd < 400.0f && dy > -170.0f && dy < 220.0f;
-		if(OtherFloor && !InReach && !Climbing)
+		if(HammerTactic)
+		{
+			// Follow the calculated far-side stance, then close to hammer range.
+			// Chasing the corpse directly made the bot stand on top of it without
+			// ever lining up the hit towards the spike cluster.
+			int StandFloor = pGS->BotFloorAt(m_HammerStand);
+			bool StandOtherFloor = StandFloor >= 0 && MyFloor >= 0 && StandFloor != MyFloor;
+			if(StandOtherFloor && !Climbing)
+			{
+				if(m_NavIdx < 0 || pGS->m_NumBotNav <= 0 || Tick >= m_NavRetargetTick ||
+					distance(MyPos, m_NavGoal) < 72.0f)
+					PickNavPoint(pGS, MyPos, MyTeam, Tick, StandFloor);
+				float dxn = m_NavGoal.x - MyPos.x;
+				Dir = fabsf(dxn) > 16.0f ? (dxn > 0.0f ? 1 : -1) : 0;
+			}
+			else if(Climbing)
+				Dir = m_ClimbDir;
+			else if(distance(MyPos, m_HammerStand) > 36.0f)
+			{
+				float dxs = m_HammerStand.x - MyPos.x;
+				Dir = fabsf(dxs) > 16.0f ? (dxs > 0.0f ? 1 : -1) : 0;
+			}
+			else
+			{
+				float dBody = distance(MyPos, pTarget->m_Pos);
+				Dir = dBody > 28.0f ? (dx > 0.0f ? 1 : -1) : 0;
+			}
+		}
+		else if(OtherFloor && !InReach && !Climbing)
 		{
 			if(m_NavIdx < 0 || pGS->m_NumBotNav <= 0 || Tick >= m_NavRetargetTick ||
 				distance(MyPos, m_NavGoal) < 72.0f)
