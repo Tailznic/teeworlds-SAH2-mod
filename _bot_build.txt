@@ -1,0 +1,6 @@
+ninja: Entering directory `build-sah'
+[1/1] Building CXX object CMakeFiles/fng2_srv.dir/src/game/server/bot.cpp.obj
+FAILED: [code=1] CMakeFiles/fng2_srv.dir/src/game/server/bot.cpp.obj 
+C:\msys64\mingw64\bin\c++.exe -D_GLIBCXX_ASSERTIONS -IC:/Users/tailznic/Downloads/SNH/build-sah/src -IC:/Users/tailznic/Downloads/SNH/src -IC:/Users/tailznic/Downloads/SNH/src/engine/external/zlib -O3 -DNDEBUG -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wformat=2 -MD -MT CMakeFiles/fng2_srv.dir/src/game/server/bot.cpp.obj -MF CMakeFiles\fng2_srv.dir\src\game\server\bot.cpp.obj.d -o CMakeFiles/fng2_srv.dir/src/game/server/bot.cpp.obj -c C:/Users/tailznic/Downloads/SNH/src/game/server/bot.cpp
+ninja: build stopped: subcommand failed.
+

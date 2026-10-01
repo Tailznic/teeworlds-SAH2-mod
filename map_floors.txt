@@ -1,0 +1,166 @@
+map C:\Users\tailznic\Documents\fng-0.6.5-win64\fng.map
+GAME layer 270x150 = 8640x4800 px, solids=1559
+
+=== FLOORS: 17 ===
+floor 0: tileY 13..16 (worldY 416..544 centre 480)  runs=4 walk_px=640
+    x  49.. 52 (worldX  1568.. 1696) len= 128px side=L
+    x 125..130 (worldX  4000.. 4192) len= 192px side=M
+    x 138..143 (worldX  4416.. 4608) len= 192px side=M
+    x 216..219 (worldX  6912.. 7040) len= 128px side=R
+floor 1: tileY 26..28 (worldY 832..928 centre 880)  runs=9 walk_px=2336
+    x  49.. 56 (worldX  1568.. 1824) len= 256px side=L
+    x  57.. 60 (worldX  1824.. 1952) len= 128px side=L
+    x  84.. 89 (worldX  2688.. 2880) len= 192px side=L
+    x 111..122 (worldX  3552.. 3936) len= 384px side=L
+    x 128..140 (worldX  4096.. 4512) len= 416px side=M
+    x 146..157 (worldX  4672.. 5056) len= 384px side=R
+    x 179..184 (worldX  5728.. 5920) len= 192px side=R
+    x 208..211 (worldX  6656.. 6784) len= 128px side=R
+    x 212..219 (worldX  6784.. 7040) len= 256px side=R
+floor 2: tileY 30..31 (worldY 960..1024 centre 992)  runs=6 walk_px=1920
+    x  37.. 48 (worldX  1184.. 1568) len= 384px side=L
+    x  70.. 77 (worldX  2240.. 2496) len= 256px side=L
+    x  96..105 (worldX  3072.. 3392) len= 320px side=L
+    x 163..172 (worldX  5216.. 5536) len= 320px side=R
+    x 191..198 (worldX  6112.. 6368) len= 256px side=R
+    x 220..231 (worldX  7040.. 7424) len= 384px side=R
+floor 3: tileY 36..37 (worldY 1152..1216 centre 1184)  runs=4 walk_px=1088
+    x  27.. 35 (worldX   864.. 1152) len= 288px side=L
+    x  47.. 54 (worldX  1504.. 1760) len= 256px side=L
+    x 214..221 (worldX  6848.. 7104) len= 256px side=R
+    x 233..241 (worldX  7456.. 7744) len= 288px side=R
+floor 4: tileY 41..42 (worldY 1312..1376 centre 1344)  runs=8 walk_px=1856
+    x  13.. 22 (worldX   416..  736) len= 320px side=L
+    x  23.. 26 (worldX   736..  864) len= 128px side=L
+    x  38.. 46 (worldX  1216.. 1504) len= 288px side=L
+    x 108..113 (worldX  3456.. 3648) len= 192px side=L
+    x 155..160 (worldX  4960.. 5152) len= 192px side=R
+    x 222..230 (worldX  7104.. 7392) len= 288px side=R
+    x 242..245 (worldX  7744.. 7872) len= 128px side=R
+    x 246..255 (worldX  7872.. 8192) len= 320px side=R
+floor 5: tileY 45..48 (worldY 1440..1568 centre 1504)  runs=8 walk_px=2176
+    x  24.. 37 (worldX   768.. 1216) len= 448px side=L
+    x  67.. 70 (worldX  2144.. 2272) len= 128px side=L
+    x  97..106 (worldX  3104.. 3424) len= 320px side=L
+    x 107..112 (worldX  3424.. 3616) len= 192px side=L
+    x 156..161 (worldX  4992.. 5184) len= 192px side=R
+    x 162..171 (worldX  5184.. 5504) len= 320px side=R
+    x 198..201 (worldX  6336.. 6464) len= 128px side=R
+    x 231..244 (worldX  7392.. 7840) len= 448px side=R
+floor 6: tileY 50..52 (worldY 1600..1696 centre 1648)  runs=4 walk_px=960
+    x  48.. 53 (worldX  1536.. 1728) len= 192px side=L
+    x  68.. 76 (worldX  2176.. 2464) len= 288px side=L
+    x 192..200 (worldX  6144.. 6432) len= 288px side=R
+    x 215..220 (worldX  6880.. 7072) len= 192px side=R
+floor 7: tileY 55..58 (worldY 1760..1888 centre 1824)  runs=8 walk_px=2432
+    x  59.. 75 (worldX  1888.. 2432) len= 544px side=L
+    x  85.. 88 (worldX  2720.. 2848) len= 128px side=L
+    x 100..107 (worldX  3200.. 3456) len= 256px side=L
+    x 111..119 (worldX  3552.. 3840) len= 288px side=L
+    x 149..157 (worldX  4768.. 5056) len= 288px side=R
+    x 161..168 (worldX  5152.. 5408) len= 256px side=R
+    x 180..183 (worldX  5760.. 5888) len= 128px side=R
+    x 193..209 (worldX  6176.. 6720) len= 544px side=R
+floor 8: tileY 61..62 (worldY 1952..2016 centre 1984)  runs=6 walk_px=1472
+    x  13.. 22 (worldX   416..  736) len= 320px side=L
+    x  23.. 29 (worldX   736..  960) len= 224px side=L
+    x  31.. 36 (worldX   992.. 1184) len= 192px side=L
+    x 232..239 (worldX  7424.. 7680) len= 256px side=R
+    x 241..245 (worldX  7712.. 7872) len= 160px side=R
+    x 246..255 (worldX  7872.. 8192) len= 320px side=R
+floor 9: tileY 67..70 (worldY 2144..2272 centre 2208)  runs=12 walk_px=2560
+    x  14.. 23 (worldX   448..  768) len= 320px side=L
+    x  24.. 27 (worldX   768..  896) len= 128px side=L
+    x  31.. 39 (worldX   992.. 1280) len= 288px side=L
+    x  41.. 44 (worldX  1312.. 1440) len= 128px side=L
+    x  46.. 49 (worldX  1472.. 1600) len= 128px side=L
+    x 123..131 (worldX  3936.. 4224) len= 288px side=M
+    x 137..145 (worldX  4384.. 4672) len= 288px side=M
+    x 219..222 (worldX  7008.. 7136) len= 128px side=R
+    x 224..227 (worldX  7168.. 7296) len= 128px side=R
+    x 229..237 (worldX  7328.. 7616) len= 288px side=R
+    x 241..244 (worldX  7712.. 7840) len= 128px side=R
+    x 245..254 (worldX  7840.. 8160) len= 320px side=R
+floor 10: tileY 71..74 (worldY 2272..2400 centre 2336)  runs=6 walk_px=4224
+    x  54.. 77 (worldX  1728.. 2496) len= 768px side=L
+    x  78.. 93 (worldX  2496.. 3008) len= 512px side=L
+    x  97..122 (worldX  3104.. 3936) len= 832px side=L
+    x 146..171 (worldX  4672.. 5504) len= 832px side=R
+    x 175..190 (worldX  5600.. 6112) len= 512px side=R
+    x 191..214 (worldX  6112.. 6880) len= 768px side=R
+floor 11: tileY 76..79 (worldY 2432..2560 centre 2496)  runs=6 walk_px=1920
+    x  40.. 49 (worldX  1280.. 1600) len= 320px side=L
+    x  52.. 58 (worldX  1664.. 1888) len= 224px side=L
+    x  80.. 92 (worldX  2560.. 2976) len= 416px side=L
+    x 176..188 (worldX  5632.. 6048) len= 416px side=R
+    x 210..216 (worldX  6720.. 6944) len= 224px side=R
+    x 219..228 (worldX  7008.. 7328) len= 320px side=R
+floor 12: tileY 80..83 (worldY 2560..2688 centre 2624)  runs=4 walk_px=1088
+    x  16.. 19 (worldX   512..  640) len= 128px side=L
+    x  66.. 78 (worldX  2112.. 2528) len= 416px side=L
+    x 190..202 (worldX  6080.. 6496) len= 416px side=R
+    x 249..252 (worldX  7968.. 8096) len= 128px side=R
+floor 13: tileY 84..86 (worldY 2688..2784 centre 2736)  runs=4 walk_px=1216
+    x  59.. 65 (worldX  1888.. 2112) len= 224px side=L
+    x 115..126 (worldX  3680.. 4064) len= 384px side=M
+    x 142..153 (worldX  4544.. 4928) len= 384px side=M
+    x 203..209 (worldX  6496.. 6720) len= 224px side=R
+floor 14: tileY 94..97 (worldY 3008..3136 centre 3072)  runs=4 walk_px=1088
+    x  92.. 99 (worldX  2944.. 3200) len= 256px side=L
+    x 103..111 (worldX  3296.. 3584) len= 288px side=L
+    x 157..165 (worldX  5024.. 5312) len= 288px side=R
+    x 169..176 (worldX  5408.. 5664) len= 256px side=R
+floor 15: tileY 100..100 (worldY 3200..3232 centre 3216)  runs=1 walk_px=672
+    x 124..144 (worldX  3968.. 4640) len= 672px side=M
+floor 16: tileY 124..124 (worldY 3968..4000 centre 3984)  runs=1 walk_px=8640
+    x   0..269 (worldX     0.. 8640) len=8640px side=M
+
+=== SPIKE CLUSTERS (throw targets): 48 ===
+green   n=  6 tileX 133..135 tileY   1..  2 centre=(4304,64) floor=0 w=96px h=64px
+normal  n=  1 tileX 132..132 tileY   3..  3 centre=(4240,112) floor=0 w=32px h=32px
+normal  n=  1 tileX 136..136 tileY   3..  3 centre=(4368,112) floor=0 w=32px h=32px
+red     n=  2 tileX 123..123 tileY  12.. 13 centre=(3952,416) floor=0 w=32px h=64px
+blue    n=  2 tileX 145..145 tileY  12.. 13 centre=(4656,416) floor=0 w=32px h=64px
+normal  n= 10 tileX 126..130 tileY  15.. 16 centre=(4112,512) floor=0 w=160px h=64px
+normal  n= 10 tileX 138..142 tileY  15.. 16 centre=(4496,512) floor=0 w=160px h=64px
+red     n= 12 tileX 115..117 tileY  16.. 19 centre=(3728,576) floor=0 w=96px h=128px
+blue    n= 12 tileX 151..153 tileY  16.. 19 centre=(4880,576) floor=0 w=96px h=128px
+red     n=  5 tileX  52.. 54 tileY  17.. 19 centre=(1712,592) floor=0 w=96px h=96px
+blue    n=  5 tileX 214..216 tileY  17.. 19 centre=(6896,592) floor=0 w=96px h=96px
+purple  n=  6 tileX 133..135 tileY  30.. 31 centre=(4304,992) floor=2 w=96px h=64px
+normal  n=  6 tileX 115..120 tileY  33.. 33 centre=(3776,1072) floor=2 w=192px h=32px
+normal  n=  6 tileX 148..153 tileY  33.. 33 centre=(4832,1072) floor=2 w=192px h=32px
+normal  n= 12 tileX  96.. 98 tileY  34.. 37 centre=(3120,1152) floor=3 w=96px h=128px
+normal  n= 12 tileX 170..172 tileY  34.. 37 centre=(5488,1152) floor=3 w=96px h=128px
+red     n=  8 tileX  76.. 77 tileY  40.. 43 centre=(2464,1344) floor=4 w=64px h=128px
+blue    n=  8 tileX 191..192 tileY  40.. 43 centre=(6144,1344) floor=4 w=64px h=128px
+red     n= 15 tileX 128..130 tileY  42.. 46 centre=(4144,1424) floor=4 w=96px h=160px
+blue    n= 15 tileX 138..140 tileY  42.. 46 centre=(4464,1424) floor=4 w=96px h=160px
+red     n=  8 tileX  18.. 21 tileY  46.. 47 centre=(640,1504) floor=5 w=128px h=64px
+blue    n=  8 tileX 247..250 tileY  46.. 47 centre=(7968,1504) floor=5 w=128px h=64px
+normal  n=  6 tileX 101..106 tileY  60.. 60 centre=(3328,1936) floor=7 w=192px h=32px
+normal  n=  6 tileX 162..167 tileY  60.. 60 centre=(5280,1936) floor=7 w=192px h=32px
+red     n=  8 tileX  64.. 67 tileY  60.. 61 centre=(2112,1952) floor=7 w=128px h=64px
+blue    n=  8 tileX 201..204 tileY  60.. 61 centre=(6496,1952) floor=7 w=128px h=64px
+red     n=  8 tileX 101..102 tileY  76.. 79 centre=(3264,2496) floor=11 w=64px h=128px
+red     n=  5 tileX 111..113 tileY  76.. 78 centre=(3600,2480) floor=10 w=96px h=96px
+blue    n=  5 tileX 155..157 tileY  76.. 78 centre=(5008,2480) floor=10 w=96px h=96px
+blue    n=  8 tileX 166..167 tileY  76.. 79 centre=(5344,2496) floor=11 w=64px h=128px
+normal  n=  9 tileX 131..132 tileY  80.. 86 centre=(4224,2672) floor=12 w=64px h=224px
+normal  n=  9 tileX 136..137 tileY  80.. 86 centre=(4384,2672) floor=12 w=64px h=224px
+gold    n= 15 tileX  53.. 57 tileY  81.. 85 centre=(1776,2672) floor=12 w=160px h=160px
+gold    n= 15 tileX 211..215 tileY  81.. 85 centre=(6832,2672) floor=12 w=160px h=160px
+red     n= 16 tileX  67.. 71 tileY  82.. 85 centre=(2224,2688) floor=12 w=160px h=128px
+blue    n= 16 tileX 197..201 tileY  82.. 85 centre=(6384,2688) floor=12 w=160px h=128px
+normal  n= 14 tileX 121..127 tileY  88.. 91 centre=(3984,2880) floor=13 w=224px h=128px
+normal  n= 14 tileX 141..147 tileY  88.. 91 centre=(4624,2880) floor=13 w=224px h=128px
+red     n= 10 tileX 116..120 tileY  88.. 89 centre=(3792,2848) floor=13 w=160px h=64px
+blue    n= 10 tileX 148..152 tileY  88.. 89 centre=(4816,2848) floor=13 w=160px h=64px
+red     n=  4 tileX  97.. 98 tileY  99..100 centre=(3136,3200) floor=15 w=64px h=64px
+blue    n=  4 tileX 170..171 tileY  99..100 centre=(5472,3200) floor=15 w=64px h=64px
+normal  n=  2 tileX 108..108 tileY 101..102 centre=(3472,3264) floor=15 w=32px h=64px
+normal  n=  2 tileX 160..160 tileY 101..102 centre=(5136,3264) floor=15 w=32px h=64px
+normal  n=  7 tileX 126..132 tileY 102..102 centre=(4144,3280) floor=15 w=224px h=32px
+normal  n=  7 tileX 136..142 tileY 102..102 centre=(4464,3280) floor=15 w=224px h=32px
+green   n=  9 tileX 133..135 tileY 110..112 centre=(4304,3568) floor=15 w=96px h=96px
+death   n=540 tileX   0..269 tileY 125..126 centre=(4320,4032) floor=16 w=8640px h=64px
