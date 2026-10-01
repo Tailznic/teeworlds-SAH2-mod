@@ -323,6 +323,7 @@ void CBotAI::Reset()
 	m_NavIdx = -1;
 	m_NavGoal = vec2(0.0f, 0.0f);
 	m_NavRetargetTick = 0;
+	m_SelfCID = -1;
 	m_Skill = 0.5f;
 	m_AimMode = 2;
 	m_AimModeTicks = 0;
@@ -502,6 +503,11 @@ void CBotAI::PickNavPoint(CGameContext *pGS, vec2 MyPos, int MyTeam, int Tick, i
 	int MySide = MyTeam == TEAM_RED ? -1 : (MyTeam == TEAM_BLUE ? 1 : 0);
 	float Best = 0.0f;
 	int BestI = -1;
+	// fng_trainbot: every bot gets its own flank. Without this all four walk
+	// to the same spot of the same shelf and stand shoulder to shoulder —
+	// which is not only silly, it also blocks each other's shots.
+	int Flank = (m_SelfCID % 2 == 0) ? -1 : 1;          // left / right approach
+	int HighGround = (m_SelfCID / 2) % 3;                 // 0 mid, 1 above, 2 below
 	for(int t = 0; t < 16; t++)
 	{
 		int i = (int)(frandom() * pGS->m_NumBotNav);
@@ -524,6 +530,33 @@ void CBotAI::PickNavPoint(CGameContext *pGS, vec2 MyPos, int MyTeam, int Tick, i
 			Score -= 250.0f;            // mid band is where the fight happens
 		else if(P.m_Band == 2 && frandom() < 0.3f)
 			Score -= 200.0f;            // sometimes take the high ground
+
+		// come at it from our own side, from the height our slot is assigned
+		if(P.m_Side == Flank)
+			Score -= 500.0f;
+		if(HighGround == 1 && P.m_Band == 2)
+			Score -= 450.0f;
+		else if(HighGround == 2 && P.m_Band == 0)
+			Score -= 450.0f;
+		else if(HighGround == 0 && P.m_Band == 1)
+			Score -= 300.0f;
+
+		// and do not stand where a teammate already stands
+		for(int t2 = 0; t2 < MAX_CLIENTS; t2++)
+		{
+			if(t2 == m_SelfCID)
+				continue;
+			CPlayer *pT = pGS->m_apPlayers[t2];
+			if(!pT || pT->GetTeam() != MyTeam)
+				continue;
+			CCharacter *pTC = pT->GetCharacter();
+			if(!pTC || !pTC->IsAlive())
+				continue;
+			float dt = distance(pTC->m_Pos, P.m_Pos);
+			if(dt < 260.0f)
+				Score += (260.0f - dt) * 4.0f; // spread out instead of stacking
+		}
+
 		if(BestI < 0 || Score < Best)
 		{
 			Best = Score;
@@ -717,6 +750,10 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	CPlayer *pSelf = pGS->m_apPlayers[ClientID];
 	if(!pSelf)
 		return;
+
+	// our slot decides which flank and which height we prefer, so the team
+	// surrounds instead of queueing up behind one another
+	m_SelfCID = ClientID;
 
 	CNetObj_PlayerInput Input;
 	mem_zero(&Input, sizeof(Input));
@@ -975,7 +1012,30 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		else if(m_Action == BOTACT_HOLD && m_HomeFloor >= 0)
 			m_FloorGoal = m_HomeFloor; // stand our ground instead of roaming
 		else if(TargetFloor >= 0)
-			m_FloorGoal = TargetFloor; // go where the fight is
+		{
+			// fng_trainbot: everybody piling onto the enemy's shelf was the
+			// whole problem — four bots on one floor shoot each other in the
+			// back. If a teammate is already on that shelf we take the one
+			// above or below instead, where we still see the fight.
+			if(BotTeammatesOnFloor(pGS, ClientID, MyTeam, TargetFloor) > 0)
+			{
+				int aNear[6];
+				int nNear = 0;
+				for(int f = 0; f < pGS->m_NumBotFloors && nNear < 6; f++)
+				{
+					if(f == TargetFloor)
+						continue;
+					if(abs(f - TargetFloor) > 3)
+						continue;
+					if(BotTeammatesOnFloor(pGS, ClientID, MyTeam, f) > 0)
+						continue;
+					aNear[nNear++] = f;
+				}
+				m_FloorGoal = nNear > 0 ? aNear[(int)(frandom() * nNear) % nNear] : TargetFloor;
+			}
+			else
+				m_FloorGoal = TargetFloor; // nobody there yet: we take it
+		}
 		else if(pGS->m_NumBotFloors > 0 && MyFloor == m_FloorGoal &&
 			frandom() < 0.15f + Roam * 0.6f)
 			// nothing to do here anymore — take a walk, like someone hunting
@@ -1123,13 +1183,20 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		float hd = fabsf(dx);
 		// fng_trainbot: a tee on another floor that we cannot shoot is not
 		// jumped at — that is what a bot does. A player walks to his level.
-		bool OtherFloor = TargetFloor >= 0 && MyFloor >= 0 && TargetFloor != MyFloor;
+		// But we walk to OUR level, not always to the enemy's: if a teammate
+		// already holds his shelf we take the one above or below, otherwise the
+		// whole team ends up shoulder to shoulder on one floor.
+		int ChaseFloor = TargetFloor;
+		if(m_FloorGoal >= 0 && m_FloorGoal != TargetFloor &&
+			BotTeammatesOnFloor(pGS, ClientID, MyTeam, TargetFloor) > 0)
+			ChaseFloor = m_FloorGoal;
+		bool OtherFloor = ChaseFloor >= 0 && MyFloor >= 0 && ChaseFloor != MyFloor;
 		bool InReach = hd < 400.0f && dy > -170.0f && dy < 220.0f;
 		if(OtherFloor && !InReach && !Climbing)
 		{
 			if(m_NavIdx < 0 || pGS->m_NumBotNav <= 0 || Tick >= m_NavRetargetTick ||
 				distance(MyPos, m_NavGoal) < 72.0f)
-				PickNavPoint(pGS, MyPos, MyTeam, Tick, TargetFloor);
+				PickNavPoint(pGS, MyPos, MyTeam, Tick, ChaseFloor);
 			float dxn = m_NavGoal.x - MyPos.x;
 			Dir = fabsf(dxn) > 16.0f ? (dxn > 0.0f ? 1 : -1) : 0;
 		}

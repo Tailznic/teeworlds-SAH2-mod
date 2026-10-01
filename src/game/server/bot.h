@@ -74,6 +74,7 @@ private:
 	vec2 m_BoostAnchor;
 
 	// fng_trainbot: patrol along the map's precomputed standable shelves
+	int m_SelfCID;           // our own slot, used to give every bot its own flank
 	int m_NavIdx;            // current patrol point, -1 = pick one
 	vec2 m_NavGoal;
 	int m_NavRetargetTick;
