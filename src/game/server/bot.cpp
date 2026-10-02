@@ -983,13 +983,18 @@ void CBotAI::LogStats(CGameContext *pGS, int ClientID)
 		const int SpikeD = pP ? pP->m_Stats.m_GrabsGold : -1;
 		const int SpikeW = pP ? pP->m_Stats.m_GrabsWrong : -1;
 		const int Unfroz = pP ? pP->m_Stats.m_Unfreezes : -1;
-		char aBuf[384];
+		// 384 was not enough: with every spike type added the report runs to
+		// about 400 bytes, and it was being cut mid-line right after
+		// "farther=" — so the DRAG numbers looked like they read zero when they
+		// had simply been truncated. A measurement that can be silently cut off
+		// is worse than no measurement.
+		char aBuf[768];
 		str_format(aBuf, sizeof(aBuf),
 			"bot %d: trained k%.1f f%.1f r%.1f d%.1f | real k%.0f f%.0f r%.0f d%.0f | score %d | q-err %.2f upd %d | wswap %d\n"
 			"        GAME shots=%d hits=%d kills=%d deaths=%d spikeN=%d spikeT=%d spikeG=%d spikeU=%d spikeD=%d spikeW=%d unfroz=%d\n"
 			"        TICKS fire=%d aim=%d clear=%d blocked=%d frozenTgt=%d noTgt=%d held=%d\n"
 			"        THROW carried=%d preyFrozen=%d overheadPlan=%d sidewaysPlan=%d clusters=%d\n"
-			"        DRAG closer=%d farther=%d startGap=%d minGap=%d",
+			"        DRAG closer=%d farther=%d startGap=%d minGap=%d runs=%d px=%d ticks=%d rate=%.2f",
 			ClientID, m_aStatReward[BOTSTAT_KILL], m_aStatReward[BOTSTAT_FREEZE],
 			m_aStatReward[BOTSTAT_RESCUE], m_aStatReward[BOTSTAT_DEATH],
 			m_aStatReal[BOTSTAT_KILL], m_aStatReal[BOTSTAT_FREEZE],
@@ -1001,7 +1006,9 @@ void CBotAI::LogStats(CGameContext *pGS, int ClientID)
 			m_LastHeldWeapon,
 			m_TicksCarried, m_ThrowPreyTicks, m_ThrowPlanOk, m_ThrowSidewaysOk,
 			m_ThrowClustersAvailable,
-			m_DragCloser, m_DragFarther, m_DragStartGap, m_DragMinGap);
+			m_DragCloser, m_DragFarther, m_DragStartGap, m_DragMinGap,
+			m_DragRuns, m_DragPx, m_DragTicks,
+			m_DragTicks > 0 ? (float)m_DragPx / (float)m_DragTicks : 0.0f);
 		pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
 		// the tick counters roll every minute alongside the reward window, so
 		// both halves describe the same minute and can be compared directly
@@ -1022,6 +1029,9 @@ void CBotAI::LogStats(CGameContext *pGS, int ClientID)
 		m_DragMinGap = 0;
 		m_LastDragGap = 0.0f;
 		m_HasLastDragGap = 0;
+		m_DragTicks = 0;
+		m_DragPx = 0;
+		m_DragRuns = 0;
 	}
 
 	// roll the window: the check is about the last minute, not all of history
@@ -1807,7 +1817,16 @@ void CBotAI::PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, 
 			continue;
 
 		// overhead: proven geometry, the rope lifts the body onto the teeth
-		const bool Overhead = dy <= -110.0f && dy >= -470.0f && fabsf(dx) <= 200.0f;
+			// fng_trainbot: an overhead lift of this size is not achievable inside
+			// the freeze window. The rope's upward pull is damped to 30%
+			// (HookVel.y *= 0.3) and it releases after 1.25s, while the freeze
+			// lasts 10s; a 590px climb needs several full grabs and the body
+			// stands up in the middle of it — which is what the log showed
+			// (grab #2..#6 at the same spot, body never leaving). So the lift is
+			// only planned when the teeth are close enough overhead to reach in
+			// one grab. Anything higher falls through to the ground branch below,
+			// which is the throw that actually works.
+			const bool Overhead = dy <= -110.0f && dy >= -300.0f && fabsf(dx) <= 200.0f;
 		// ground: the teeth are at or below the body's own level, which is what a
 		// drag along the shelf actually delivers into
 		const bool Ground = dy > -110.0f && Dist < 700.0f;
@@ -1856,20 +1875,18 @@ void CBotAI::PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, 
 			m_ThrowStand = Learned;
 		else if(BestGround)
 		{
-			// fng_trainbot: a ground drag needs the hooker on the *far side* of
-			// the body from the teeth. The rope pulls the body towards whoever
-			// holds it, so standing between the body and the spikes would drag it
-			// away from them; standing beyond the body and walking in drags it
-			// onto them. This is the throw that actually happens in FNG, and the
-			// one the overhead-only plan could not express at all.
-			vec2 Away = PreyPos - BT.m_Pos;
-			float AwayLen = length(Away);
-			Away = AwayLen < 1.0f ? vec2(0.0f, 1.0f) : Away * (1.0f / AwayLen);
-			// 90px: far enough that the body actually starts moving before the
-			// hook's 1.25s runs out, close enough to stay well inside the 380px
-			// rope for the whole walk in. At 44px the body was nudged rather than
-			// dragged, which is why closer outnumbered farther on a live run.
-			m_ThrowStand = PreyPos + Away * 90.0f;
+			// fng_trainbot: a ground drag needs the hooker on the *spike* side of
+			// the body. The rope pulls the body towards whoever holds it, so
+			// standing between the body and the teeth is what walks the corpse
+			// onto them; standing beyond the body drags it the wrong way, which
+			// is precisely what the measurement caught — 94 ticks nearer, 92
+			// farther, no progress. This was the opposite sign.
+			vec2 Toward = BT.m_Pos - PreyPos;
+			float TowardLen = length(Toward);
+			Toward = TowardLen < 1.0f ? vec2(0.0f, 1.0f) : Toward * (1.0f / TowardLen);
+			// 70px is inside the 380px rope with room for the body to trail, and
+			// outside the tee's own radius so the hook stays on him
+			m_ThrowStand = PreyPos + Toward * 70.0f;
 			if(pGS->Collision()->GetCollisionAt(m_ThrowStand.x, m_ThrowStand.y) & BOT_DANGER_MASK ||
 				pGS->Collision()->GetCollisionAt(m_ThrowStand.x, m_ThrowStand.y - 24.0f) & BOT_DANGER_MASK)
 				m_ThrowStand = PreyPos;
@@ -2820,21 +2837,20 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		{
 			// fng_trainbot: drag properly instead of sprinting at the teeth.
 			//
-			// The rope is ~380px and lets go after 1.25s. Walking straight at the
-			// spikes outruns the body, the rope runs out, the bot has to turn round
-			// and come back — and the measurement showed exactly that: 45 ticks
-			// nearer and 21 farther, for a net gain of 4px. The body simply never
-			// arrived anywhere.
+			// The rope pulls the body towards the hooker — that is the whole
+			// mechanic. So to walk a body onto horizontal spikes the bot has to
+			// stand on the *spike* side of the body and walk in, letting the body
+			// follow. Standing on the far side, as this used to do, pulls the
+			// corpse directly away from the teeth, and the measurement showed
+			// exactly that: 94 ticks nearer and 92 farther, over 5 drags, for no
+			// net progress at all. The body was being dragged back and forth.
 			//
-			// So the bot does not aim at the teeth, it aims at a spot 70px
-			// *behind* the body on the line towards them. That keeps it in contact,
-			// keeps the rope taut, and walks the corpse forward at the speed the
-			// rope can actually deliver — which is slow, and is the only speed
-			// that works.
+			// The station is 70px ahead of the body towards the teeth: far enough
+			// that the rope stays taut, and the body walks in behind.
 			vec2 ToSpike = SpikePos - pCarried->m_Pos;
 			float ToSpikeLen = length(ToSpike);
 			ToSpike = ToSpikeLen < 1.0f ? vec2(1.0f, 0.0f) : ToSpike * (1.0f / ToSpikeLen);
-			vec2 Station = pCarried->m_Pos - ToSpike * 70.0f;
+			vec2 Station = pCarried->m_Pos + ToSpike * 70.0f;
 			float dxStation = Station.x - MyPos.x;
 			// stay lined up with the body vertically as well, so the rope does not
 			// go slack over a ledge and slide off him
@@ -3111,11 +3127,23 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	bool WantRelease = false;
 	if(pCarried)
 	{
-		float dPreySpike = HaveSpike ? distance(pCarried->m_Pos, SpikePos) : 1e9f;
-		if(!HaveSpike && m_CarryTicks > 120)
-			WantRelease = true; // nowhere to put him: drop him and fight clean
-		else if(HaveSpike && m_CarryTicks > 300 && dPreySpike > 220.0f + SpikeR)
-			WantRelease = true; // the throw went nowhere, stop carrying cargo
+		// fng_trainbot: the freeze is the clock this whole play runs on. Once the
+		// window shuts the body stands up, and dragging a *live* tee into the
+		// teeth is a self-kill worth nothing — the log showed exactly that, a
+		// body carried for 381 of the 500 ticks arriving with frozen=0. A drag
+		// that cannot be finished is not a drag worth starting, so let him go
+		// and fight while he is still a target.
+		const int FreezeLeft = pCarried->GetFreezeTicksLeft();
+		if(FreezeLeft <= 60)
+			WantRelease = true;
+		else
+		{
+			float dPreySpike = HaveSpike ? distance(pCarried->m_Pos, SpikePos) : 1e9f;
+			if(!HaveSpike && m_CarryTicks > 120)
+				WantRelease = true; // nowhere to put him: drop him and fight clean
+			else if(HaveSpike && m_CarryTicks > 300 && dPreySpike > 220.0f + SpikeR)
+				WantRelease = true; // the throw went nowhere, stop carrying cargo
+		}
 	}
 
 	// little hops while dragging — moving a body is heavy work
@@ -3210,15 +3238,21 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 							Nearest = ds;
 					}
 					// fng_trainbot: only take the bait when the teeth are close enough
-					// to actually reach. The rope is ~380px and lets go after
-					// ~1.25s, so a body 700px from any spike has to be dragged the
-					// whole way in bursts, re-hooking every time — and every one of
-					// those bursts is a chance for somebody else to kill him, or for
-					// the freeze to run out. Measured on a live run, bots spent
-					// 264..645 ticks holding a body that had no spike within 700px,
-					// which is a body carried for nothing. Walk to a body whose
-					// teeth are in range instead.
-					WorthIt = Nearest < 420.0f;
+					// to actually reach *before the freeze runs out*. The window is
+					// ten seconds (500 ticks) and a drag eats most of it; the log
+					// showed a body carried for 381 ticks arriving with frozen=0,
+					// which is a corpse that stood up mid-drag and scored nothing.
+					// The rope hauls at most a few hundred pixels per grab, so
+					// beyond that the answer is already no.
+					const int FreezeLeft = pTarget->GetFreezeTicksLeft();
+					const int Budget = FreezeLeft > 0 ? FreezeLeft - 80 : 0; // keep a margin for the swing itself
+					// fng_trainbot: the radius is derived, not guessed. The drag was
+					// measured at 3.67 px/tick of body movement, and the freeze is
+					// 500 ticks of which ~400 are usable, so a body has roughly
+					// 1400px of travel — far more than the old 420px limit needed.
+					// The limit that actually bites is not distance, it is the
+					// freeze window, and that is checked above.
+					WorthIt = Nearest < 420.0f && Budget > 0;
 				}
 				if(WorthIt)
 					WantHook = true;
@@ -3308,9 +3342,17 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			m_LastDragGap = Gap;
 			m_DragStartGap = (int)Gap;
 			m_DragMinGap = (int)Gap;
+			m_LastBodyPos = pCarried->m_Pos;
+			m_DragRuns++;
 		}
 		else
 		{
+			// throughput: how many pixels of actual ground the body covers per
+			// tick on the rope. This is the number the grab radius should be
+			// derived from, and it is the one thing that was still a guess.
+			m_DragPx += (int)distance(pCarried->m_Pos, m_LastBodyPos);
+			m_DragTicks++;
+			m_LastBodyPos = pCarried->m_Pos;
 			if(Gap < m_LastDragGap)
 				m_DragCloser++;
 			else if(Gap > m_LastDragGap + 1.0f)

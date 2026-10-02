@@ -261,6 +261,15 @@ bool CCharacter::IsFrozen(){
 	return m_Freeze.m_ActivationTick != 0;
 }
 
+// fng_trainbot: ticks left before this tee stands up on his own. See the
+// declaration for why this lives here and not in the header.
+int CCharacter::GetFreezeTicksLeft()
+{
+	if(!IsFrozen())
+		return 0;
+	return (m_Freeze.m_Duration * Server()->TickSpeed()) - (Server()->Tick() - m_Freeze.m_ActivationTick);
+}
+
 int CCharacter::GetActiveWeaponForReload() {
 	if(g_Config.m_SvPerWeaponReload)
 		return m_ActiveWeapon;
@@ -994,6 +1003,24 @@ void CCharacter::DieSpikes(int pPlayerID, int spikes_flag) {
 	else if (spikes_flag&CCollision::COLFLAG_SPIKE_GOLD)	Weapon = WEAPON_SPIKE_GOLD;
 	else if (spikes_flag&CCollision::COLFLAG_SPIKE_GREEN)	Weapon = WEAPON_SPIKE_GREEN;
 	else if (spikes_flag&CCollision::COLFLAG_SPIKE_PURPLE)	Weapon = WEAPON_SPIKE_PURPLE;
+
+	// fng_trainbot: instrumentation. Every frozen body that reaches the teeth
+	// passes through here, and the difference between a scored spike kill and a
+	// body that lies on the spikes is entirely in the two lines below: whether
+	// the victim was still frozen, and whether the killer id survived the drag.
+	// Nothing else in the log distinguishes those two cases, and the measured
+	// symptom — bodies arriving within 4px of a real spike tile and no points —
+	// is exactly what a failed attribution looks like.
+	if(g_Config.m_SvBotDebug)
+	{
+		char aBuf[320];
+		str_format(aBuf, sizeof(aBuf),
+			"DIESPIKES vic=%d frozen=%d killerArg=%d flags=0x%x weapon=%d %s",
+			m_pPlayer->GetCID(), IsFrozen() ? 1 : 0, pPlayerID,
+			spikes_flag, Weapon,
+			(!IsFrozen() || pPlayerID == m_pPlayer->GetCID()) ? "(downgraded to WORLD)" : "(spike kill)");
+		GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
+	}
 
 	// if the player leaves the game, he will be nullptr and we handle it like a selfkill
 	if (pPlayerID == -1 || GameServer()->m_apPlayers[pPlayerID] == 0) pPlayerID = m_pPlayer->GetCID();

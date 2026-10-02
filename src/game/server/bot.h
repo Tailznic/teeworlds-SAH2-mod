@@ -233,6 +233,13 @@ private:
 	CCharacter *m_RegrabTarget; // victim we lost and must catch again
 	int m_RegrabUntil;     // keep chasing the dropped body until this tick
 	int m_LastPreyCID;     // whose body we were last dragging, -1 = none
+	// fng_trainbot: the freeze is ten seconds and the rope only carries a body
+	// for a fifth of that at a stretch. A drag that starts with four seconds
+	// left is a drag that ends with the victim standing up, and an unfrozen tee
+	// on the spikes is a self-kill worth nothing — which is what the log showed
+	// ("frozen=0" on a body that had been carried for 381 ticks). So the bot
+	// counts what is left of the freeze and lets go before the window shuts.
+	int m_PreyFreezeLeft;  // ticks of freeze remaining on the current body
 	void PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, int Tick);
 
 	// fng_trainbot: hammering the frozen prey into the spikes. The hook drops a
@@ -343,6 +350,15 @@ private:
 	int m_DragMinGap;
 	float m_LastDragGap;
 	int m_HasLastDragGap;
+	// fng_trainbot: throughput of the drag itself. Everything else has been
+	// measured except this: how many pixels a body actually covers per tick
+	// while it is on the rope. It decides the grab radius — pick too wide and
+	// the body stands up halfway there, which is what the log kept showing.
+	// Without this number the threshold is a guess dressed up as a constant.
+	int m_DragTicks;
+	int m_DragPx;
+	int m_DragRuns;
+	vec2 m_LastBodyPos;
 
 	// fng_trainbot: reward-hacking check. Learning from my own reward function is
 	// only safe if I can see the function's score separately from the game's. So

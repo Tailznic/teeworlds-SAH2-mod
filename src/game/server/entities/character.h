@@ -76,6 +76,12 @@ public:
 
 	// SAH (Stole and Hook): the player that hooked (froze) this character, -1 = nobody
 	int GetFreezeOwnerID() const { return m_FreezeOwnerID; }
+	// fng_trainbot: how much of the freeze is left, in ticks. Ten seconds is the
+	// whole window a body is worth carrying for, and the bot needs to know when
+	// that window is closing before it starts a drag it cannot finish. Declared
+	// here and defined in the .cpp: it needs the server, which is an incomplete
+	// type in this header.
+	int GetFreezeTicksLeft();
 
 	void SetEmote(int Emote, int Tick);
 
