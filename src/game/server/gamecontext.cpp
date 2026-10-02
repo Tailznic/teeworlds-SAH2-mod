@@ -1505,6 +1505,14 @@ void CGameContext::BotRewardKill(int KillerCID, int VictimCID, int Weapon)
 		if(VictimCID >= 0 && VictimCID < MAX_CLIENTS && m_apPlayers[VictimCID] && m_apPlayers[KillerCID] &&
 			m_pController->IsTeamplay() && m_apPlayers[KillerCID]->GetTeam() == m_apPlayers[VictimCID]->GetTeam())
 			Mult = -2.0f;
+		// fng_trainbot: count it twice — once as the training credit the bot is
+		// about to be paid, once as the event the game itself confirms. The gap
+		// between the two is what reward hacking looks like from the inside, and
+		// it is the only way to see it: from the outside the bot just looks
+		// busy.
+		const int Stat = Weapon >= WEAPON_SPIKE_NORMAL ? CBotAI::BOTSTAT_THROW : CBotAI::BOTSTAT_KILL;
+		m_aBotAI[KillerCID].NoteStat(Stat, Amount * Mult);
+		m_aBotAI[KillerCID].NoteReal(Stat);
 		m_aBotAI[KillerCID].RewardAction(this, m_aBotAI[KillerCID].GetAction(), Amount * Mult);
 	}
 
@@ -1517,6 +1525,8 @@ void CGameContext::BotRewardKill(int KillerCID, int VictimCID, int Weapon)
 		// every spike kill, leaving the table flat.
 		int Action = m_aBotAI[VictimCID].GetAction();
 		float Blame = Action == CBotAI::BOTACT_RESCUE ? -0.5f : -1.2f;
+		m_aBotAI[VictimCID].NoteStat(CBotAI::BOTSTAT_DEATH, Blame);
+		m_aBotAI[VictimCID].NoteReal(CBotAI::BOTSTAT_DEATH);
 		m_aBotAI[VictimCID].RewardAction(this, Action, Blame);
 		m_aBotAI[VictimCID].EndEpisode(0.0f, g_Config.m_SvBotLearnRate / 100.0f);
 	}
@@ -1531,6 +1541,8 @@ void CGameContext::BotRewardFreeze(int FreezerCID, int VictimCID)
 	if(m_pController && m_pController->IsTeamplay() &&
 		m_apPlayers[FreezerCID]->GetTeam() == m_apPlayers[VictimCID]->GetTeam())
 		return;
+	m_aBotAI[FreezerCID].NoteStat(CBotAI::BOTSTAT_FREEZE, 1.0f);
+	m_aBotAI[FreezerCID].NoteReal(CBotAI::BOTSTAT_FREEZE);
 	m_aBotAI[FreezerCID].RewardAction(this, m_aBotAI[FreezerCID].GetAction(), 1.0f);
 }
 
@@ -1545,6 +1557,8 @@ void CGameContext::BotRewardRescue(int RescuerCID, int VictimCID)
 		return;
 	if(RescuerCID < 0 || RescuerCID >= MAX_CLIENTS || !m_aIsBot[RescuerCID])
 		return;
+	m_aBotAI[RescuerCID].NoteStat(CBotAI::BOTSTAT_RESCUE, 3.0f);
+	m_aBotAI[RescuerCID].NoteReal(CBotAI::BOTSTAT_RESCUE);
 	m_aBotAI[RescuerCID].RewardAction(this, CBotAI::BOTACT_RESCUE, 3.0f);
 
 	if(g_Config.m_SvBotDebug)
@@ -1580,6 +1594,41 @@ void CGameContext::LoadBotBrains()
 	io_close(File);
 
 	int Loaded = 0;
+	// fng_trainbot: the version gate. A brain file records the shape of every
+	// head it was written from; if the code has since changed a shape, the file
+	// is ignored. Without this, weights saved for the old 8-input tactical head
+	// are read into the current 24-input head and land on completely different
+	// weights — index 7 of the old file is index 7 of the new one, but it means
+	// something else entirely. That does not fail loudly, it just produces a
+	// network that looks trained and plays like noise, which is the kind of
+	// failure you spend a day staring at a log trying to explain.
+	int FileVersion = -1;
+	{
+		const char *pScan = pBuf;
+		while(*pScan)
+		{
+			const char *pScanEnd = str_find(pScan, "\n");
+			int ScanLen = pScanEnd ? (int)(pScanEnd - pScan) : (int)str_length(pScan);
+			if(ScanLen > 4 && str_comp_num(pScan, "ver ", 4) == 0)
+			{
+				sscanf(pScan + 4, "%d", &FileVersion);
+				break;
+			}
+			if(!pScanEnd)
+				break;
+			pScan = pScanEnd + 1;
+		}
+	}
+	if(FileVersion != CBotAI::BRAIN_VERSION)
+	{
+		char aVer[288];
+		str_format(aVer, sizeof(aVer),
+			"bot brains: '%s' is version %d, this build is version %d - ignoring it, the bots start from scratch",
+			g_Config.m_SvBotBrainFile, FileVersion, CBotAI::BRAIN_VERSION);
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aVer);
+		delete[] pBuf;
+		return;
+	}
 	const char *pLine = pBuf;
 	while(*pLine)
 	{
@@ -1590,7 +1639,11 @@ void CGameContext::LoadBotBrains()
 		{
 			mem_copy(aLine, pLine, Len);
 			aLine[Len] = 0;
-			if(str_comp_num(aLine, "bot", 3) == 0)
+			if(str_comp_num(aLine, "ver", 3) == 0)
+			{
+				// already handled above
+			}
+			else if(str_comp_num(aLine, "bot", 3) == 0)
 			{
 				int CID = 0;
 				float aW[CBotAI::NUM_BOTACTIONS];
@@ -1600,6 +1653,26 @@ void CGameContext::LoadBotBrains()
 					m_aBotAI[CID].SetWeights(aW);
 					Loaded++;
 				}
+			}
+			else if(str_comp_num(aLine, "strat", 5) == 0)
+			{
+				// fng_trainbot: the strategic head is saved separately so the
+				// tactical `nn` indices never shift when it is retuned.
+				int CID = -1, Index = -1;
+				float Value = 0.0f;
+				if(sscanf(aLine + 5, "%d %d %f", &CID, &Index, &Value) == 3 &&
+					CID >= 0 && CID < MAX_CLIENTS && Index >= 0 && Index < CBotAI::NUM_STRATEGY_WEIGHTS)
+					m_aBotAI[CID].SetStrategyWeight(Index, Value);
+			}
+			else if(str_comp_num(aLine, "tgt", 3) == 0)
+			{
+				// fng_trainbot: the target head, saved under its own prefix so the
+				// `nn` indices never shift when one of the other heads is retuned
+				int CID = -1, Index = -1;
+				float Value = 0.0f;
+				if(sscanf(aLine + 3, "%d %d %f", &CID, &Index, &Value) == 3 &&
+					CID >= 0 && CID < MAX_CLIENTS && Index >= 0 && Index < CBotAI::NUM_TARGET_WEIGHTS)
+					m_aBotAI[CID].SetTargetWeight(Index, Value);
 			}
 			else if(str_comp_num(aLine, "ctl", 3) == 0)
 			{
@@ -1647,6 +1720,11 @@ void CGameContext::SaveBotBrains()
 		if(!m_aIsBot[i] || !m_apPlayers[i])
 			continue;
 		char aBuf[192];
+		// fng_trainbot: the version goes out with every bot block, so a file
+		// always says what shape it was written from
+		str_format(aBuf, sizeof(aBuf), "ver %d %d", CBotAI::BRAIN_VERSION, i);
+		io_write(File, aBuf, str_length(aBuf));
+		io_write_newline(File);
 		str_format(aBuf, sizeof(aBuf), "bot %d %f %f %f %f %f", i,
 			m_aBotAI[i].Weight(CBotAI::BOTACT_HUNT), m_aBotAI[i].Weight(CBotAI::BOTACT_RESCUE),
 			m_aBotAI[i].Weight(CBotAI::BOTACT_THROW), m_aBotAI[i].Weight(CBotAI::BOTACT_HOLD),
@@ -1656,6 +1734,18 @@ void CGameContext::SaveBotBrains()
 		for(int Index = 0; Index < CBotAI::NUM_NN_WEIGHTS; Index++)
 		{
 			str_format(aBuf, sizeof(aBuf), "nn %d %d %.7f", i, Index, m_aBotAI[i].NNWeight(Index));
+			io_write(File, aBuf, str_length(aBuf));
+			io_write_newline(File);
+		}
+		for(int Index = 0; Index < CBotAI::NUM_TARGET_WEIGHTS; Index++)
+		{
+			str_format(aBuf, sizeof(aBuf), "tgt %d %d %.7f", i, Index, m_aBotAI[i].TargetWeight(Index));
+			io_write(File, aBuf, str_length(aBuf));
+			io_write_newline(File);
+		}
+		for(int Index = 0; Index < CBotAI::NUM_STRATEGY_WEIGHTS; Index++)
+		{
+			str_format(aBuf, sizeof(aBuf), "strat %d %d %.7f", i, Index, m_aBotAI[i].StrategyWeight(Index));
 			io_write(File, aBuf, str_length(aBuf));
 			io_write_newline(File);
 		}

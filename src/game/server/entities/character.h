@@ -106,6 +106,10 @@ public:
 
 	bool IsFrozen();
 
+	// SAH: read-only health/armor for the practice bot's tactical features
+	int GetHealth() const { return m_Health; }
+	int GetArmor() const { return m_Armor; }
+
 	void SetKiller(int pKillerID, unsigned int pHookTicks);
 
 private:

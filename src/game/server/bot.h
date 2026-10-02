@@ -25,15 +25,99 @@ public:
 		NUM_BOTACTIONS
 	};
 	static const char *ActionName(int Action);
-	enum { NUM_QSTATES = 96, NUM_NN_INPUTS = 8, NUM_NN_HIDDEN = 12, NUM_NN_WEIGHTS = NUM_NN_INPUTS * NUM_NN_HIDDEN + NUM_NN_HIDDEN + NUM_NN_HIDDEN * NUM_BOTACTIONS + NUM_BOTACTIONS };
+	static const char *StrategyName(int Strategy);
+	enum { BOTSTRAT_HUNT = 0, BOTSTRAT_THROW, BOTSTRAT_RESCUE, BOTSTRAT_PATROL, BOTSTRAT_HOLD, NUM_BOTSTRATEGIES };
+	// fng_trainbot: the tactical state used to be six bits packed into 96
+	// buckets. Ninety-six boxes is the ceiling on everything the bot could ever
+	// learn: a policy that understood "frozen enemy, 300px, on my floor, we are
+	// holding" shared one number with "frozen enemy, 300px, wrong floor, we are
+	// roaming". The Q-network now reads continuous features directly, so the
+	// resolution is set by the feature list instead of by a bit budget.
+	enum
+	{
+		NN_ENEMY_COUNT = 0,
+		NN_NEAREST_DIST,
+		NN_NEAREST_FROZEN,
+		NN_FROZEN_ENEMIES,
+		NN_FROZEN_MATES,
+		NN_MY_HEALTH,
+		NN_HOOK_GRABBED,
+		NN_GROUNDED,
+		NN_STRAT_HUNT,
+		NN_STRAT_THROW,
+		NN_STRAT_RESCUE,
+		NN_STRAT_PATROL,
+		NN_STRAT_HOLD,
+		NN_HAS_TARGET,
+		NN_TARGET_FROZEN,
+		NN_TARGET_DIST,
+		NN_TARGET_LOS,
+		NN_TARGET_ON_MY_FLOOR,
+		NN_SELF_FROZEN,
+		NN_ENEMY_ABOVE,
+		NN_ENEMY_BELOW,
+		NN_ENEMY_DISTRACTED,
+		NN_VALID_THROW,
+		NN_TEAMMATES_ON_FLOOR,
+		NN_FEATURE_COUNT
+	};
+	enum { NUM_NN_INPUTS = NN_FEATURE_COUNT, NUM_NN_HIDDEN = 12, NUM_NN_WEIGHTS = NUM_NN_INPUTS * NUM_NN_HIDDEN + NUM_NN_HIDDEN + NUM_NN_HIDDEN * NUM_BOTACTIONS + NUM_BOTACTIONS };
+	enum { NUM_STRATEGY_INPUTS = 14, NUM_STRATEGY_WEIGHTS = NUM_STRATEGY_INPUTS * NUM_BOTSTRATEGIES + NUM_BOTSTRATEGIES };
 	enum { NUM_CONTROL_INPUTS = 40, NUM_CONTROL_OUTPUTS = 16, NUM_CONTROL_WEIGHTS = NUM_CONTROL_INPUTS * NUM_CONTROL_OUTPUTS + NUM_CONTROL_OUTPUTS };
+	// fng_trainbot: the target head. Choosing *which* enemy to attack used to be
+	// a table of hand-written bonuses (900 for a frozen one while throwing, 450
+	// for a live one while hunting, 2500 for being on another floor). Those
+	// constants were my opinion, so the network could never disagree with it: at
+	// best it could pick a strategy that routed around the opinion. Now every
+	// candidate enemy is scored by a small network over observable features, and
+	// the only rule that stays is the anti-pile-up filter, because four bots
+	// dragging one body is a bug in the team, not a bad preference to be learned.
+	enum
+	{
+		TGT_DIST = 0,
+		TGT_FROZEN,
+		TGT_LOS,
+		TGT_SAME_FLOOR,
+		TGT_ABOVE,
+		TGT_BELOW,
+		TGT_DISTRACTED,
+		TGT_HIS_HEALTH,
+		TGT_MY_HEALTH,
+		TGT_SELF_FROZEN,
+		TGT_ON_MY_HOOK,
+		TGT_SPIKE_NEAR,
+		TGT_MATES_ON_FLOOR,
+		TGT_ENEMIES_ON_FLOOR,
+		TGT_REACH,
+		TGT_CONST,
+		NUM_TARGET_FEATURES
+	};
+	enum { NUM_TARGET_INPUTS = NUM_TARGET_FEATURES, NUM_TARGET_HIDDEN = 12, NUM_TARGET_WEIGHTS = NUM_TARGET_INPUTS * NUM_TARGET_HIDDEN + NUM_TARGET_HIDDEN + NUM_TARGET_HIDDEN + 1 };
+	// fng_trainbot: bump this whenever the shape of any head changes. A brain
+	// file whose `ver` line does not match is ignored weight by weight, because
+	// silently reading a set of 8-input weights into a 24-input network does not
+	// fail loudly — it produces a network that looks trained and plays like noise.
+	enum { BRAIN_VERSION = 3 };
+	// fng_trainbot: what the counters mean, used by NoteStat
+	enum { BOTSTAT_KILL = 0, BOTSTAT_DEATH, BOTSTAT_FREEZE, BOTSTAT_RESCUE, BOTSTAT_THROW, BOTSTAT_IDLE, NUM_BOTSTATS };
 
 	int GetAction() const { return m_Action; }
-	int Observation(CGameContext *pGS, int ClientID) const;
-	void UpdateQ(int State, int Action, float Reward, int NextState, bool Terminal, float Alpha);
+	void EncodeNNFeatures(CGameContext *pGS, int ClientID, float *pInput) const;
+	void UpdateQ(const float *pState, int Action, float Reward, const float *pNextState, bool Terminal, float Alpha);
 	void EndEpisode(float Reward, float Alpha);
 	float NNWeight(int Index) const;
 	void SetNNWeight(int Index, float Value);
+	float TargetWeight(int Index) const;
+	void SetTargetWeight(int Index, float Value);
+	void TargetForward(const float *pInput, float *pHidden, float *pValue) const;
+	void LearnTarget(float Reward, float Rate);
+	void NoteStat(int Stat, float Amount);
+	void NoteReal(int Stat);
+	void LogStats(CGameContext *pGS, int ClientID);
+	// fng_trainbot: features of one candidate enemy, scored by the target head
+	void EncodeTargetFeatures(CGameContext *pGS, int ClientID, CCharacter *pEnemy, float *pInput) const;
+	float StrategyWeight(int Index) const;
+	void SetStrategyWeight(int Index, float Value);
 	float ControlWeight(int Index) const;
 	void SetControlWeight(int Index, float Value);
 	void ControlForward(const float *pInput, float *pOutput) const;
@@ -48,12 +132,15 @@ public:
 	void RewardAction(CGameContext *pGS, int Action, float Amount);
 	// pick a neural-network tactic that is currently possible
 	int ChooseAction(CGameContext *pGS, int ClientID);
+	int ChooseStrategy(CGameContext *pGS, int ClientID, float *pInput);
+	void UpdateStrategyQ(const float *pInput, int Strategy, float Reward, float Alpha);
 	void SetWeights(const float *pWeights);
 	float Weight(int Action) const { return m_aWeights[Action]; }
 
 private:
-	void EncodeNNInput(int State, float *pInput) const;
-	void ForwardNN(int State, float *pHidden, float *pOutput) const;
+	void ForwardNN(const float *pInput, float *pHidden, float *pOutput) const;
+	// fng_trainbot: pull saturated weights back inside the usable band
+	void ClampNN();
 	int m_TargetCID;      // current enemy to chase
 	int m_RetargetTick;   // next tick we may re-pick the target
 	int m_BackoffTicks;   // stepping away after a throw release
@@ -172,9 +259,15 @@ private:
 	float m_aNNHiddenBias[NUM_NN_HIDDEN];
 	float m_aNNHiddenOutput[NUM_NN_HIDDEN][NUM_BOTACTIONS];
 	float m_aNNOutputBias[NUM_BOTACTIONS];
+	float m_aStrategyWeights[NUM_STRATEGY_INPUTS][NUM_BOTSTRATEGIES];
+	float m_aStrategyBias[NUM_BOTSTRATEGIES];
+	float m_aLastStrategyInput[NUM_STRATEGY_INPUTS];
 	float m_PendingReward;
-	int m_LastState;
+	float m_aStateInput[NUM_NN_INPUTS];
+	float m_aLastStateInput[NUM_NN_INPUTS];
 	int m_LastAction;
+	int m_LastStrategy;
+	int m_Strategy;
 	bool m_HasTransition;
 	int m_Action;          // tactical action selected by the learned policy
 	int m_ActionTick;      // when that action expires
@@ -185,6 +278,51 @@ private:
 	float m_aLastControlOutput[NUM_CONTROL_OUTPUTS];
 	int m_aLastControlChoice[5]; // move, jump, fire, hook, weapon
 	bool m_HasControlTransition;
+
+	// fng_trainbot: target head — scores one candidate enemy per forward pass
+	float m_aTargetInputHidden[NUM_TARGET_INPUTS][NUM_TARGET_HIDDEN];
+	float m_aTargetHiddenBias[NUM_TARGET_HIDDEN];
+	float m_aTargetHiddenValue[NUM_TARGET_HIDDEN];
+	float m_aTargetValueBias;
+	float m_aLastTargetInput[NUM_TARGET_INPUTS];
+	float m_aLastTargetHidden[NUM_TARGET_HIDDEN];
+	float m_LastTargetValue;
+	int m_LastTargetCID;
+	bool m_HasTargetTransition;
+
+	// fng_trainbot: after seven hours of training the tactical network had
+	// saturated every one of its 365 weights at the +-10 clamp, so its output no
+	// longer depended on the state at all and every bot did the same thing. The
+	// fixes are the ones the arithmetic actually calls for: rewards divided by a
+	// fixed scale instead of being clamped at 100, the TD error clipped where a
+	// single spike kill cannot move a weight by two units, and a decaying
+	// learning rate so an old brain is still able to change its mind. These two
+	// counters exist so the fix can be verified rather than assumed.
+	int m_NNUpdates;      // successful TD updates, drives the rate decay
+	int m_StrategyUpdates;
+	float m_LastQError;   // |TD error| of the most recent update, for the log
+	float m_StrategyBaseline; // running mean reward, the bandit baseline
+	// fng_trainbot: reward earned by chasing the man we picked, flushed into the
+	// target head when the current decision window closes
+	float m_LastActionReward;
+	// fng_trainbot: weapon-switch pacing. The cooldown is the minimum number of
+	// ticks between two swaps; the counter is what the log prints so the fix can
+	// be measured (it should be a few per minute, not a few per second).
+	int m_WeaponCooldown;
+	int m_WeaponSwitchCount;
+
+	// fng_trainbot: reward-hacking check. Learning from my own reward function is
+	// only safe if I can see the function's score separately from the game's. So
+	// every credit event is counted twice: once in the hand-out points the bot is
+	// trained on, once in what actually happened on the scoreboard. If the trained
+	// total climbs while the scoreboard stays flat, the bot has learned to farm my
+	// reward instead of winning, and these two lines are the only way to notice.
+	float m_aStatReward[NUM_BOTSTATS];  // training signal handed out
+	float m_aStatReal[NUM_BOTSTATS];    // what the game confirms
+	int m_StatLastScore;
+	int m_StatLastTick;
+	int m_StatIdleTicks;
+	bool m_HasStatBaseline;
 };
 
 #endif
