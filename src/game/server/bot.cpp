@@ -433,6 +433,7 @@ void CBotAI::Reset()
 	m_ThrowIdx = -1;
 	m_ThrowStand = vec2(0.0f, 0.0f);
 	m_ThrowLearned = false;
+	m_ThrowIsGround = false;
 	m_ThrowTick = 0;
 	m_RegrabTarget = 0;
 	m_RegrabUntil = 0;
@@ -546,6 +547,19 @@ void CBotAI::Reset()
 	m_LastActionReward = 0.0f;
 	m_WeaponCooldown = 0;
 	m_WeaponSwitchCount = 0;
+	m_LastHeldWeapon = -1;
+	m_TicksFiring = 0;
+	m_TicksAiming = 0;
+	m_TicksInLineOfSight = 0;
+	m_TicksBlockedByTee = 0;
+	m_TicksNoTarget = 0;
+	m_TicksTargetFrozen = 0;
+	m_IdleChargeTick = 0;
+	m_ThrowPreyTicks = 0;
+	m_ThrowPlanOk = 0;
+	m_ThrowSidewaysOk = 0;
+	m_TicksCarried = 0;
+	m_ThrowClustersAvailable = 0;
 	for(int i = 0; i < NUM_BOTSTATS; i++)
 	{
 		m_aStatReward[i] = 0.0f;
@@ -944,15 +958,70 @@ void CBotAI::LogStats(CGameContext *pGS, int ClientID)
 
 	if(g_Config.m_SvBotDebug)
 	{
-		char aBuf[320];
+		// fng_trainbot: the game's own counters, not ours. This is the line that
+		// answers "why don't they kill" without guessing: shots tells us whether
+		// they pull the trigger at all, shots-minus-freezes whether the shots
+		// land, freezes-minus-spikekills whether the bodies ever reach the teeth.
+		CPlayer *pP = pGS->m_apPlayers[ClientID];
+		// fng_trainbot: these are the game's own counters, not ours. shots says
+		// whether the bot pulls the trigger at all, aim whether an enemy was
+		// ever in the line, clear-minus-blocked whether the shot was allowed.
+		// Comparing the three is the only way to tell "cannot aim" from "aims
+		// but never fires" from "fires into a frozen teammate".
+		const int Shots = pP ? pP->m_Stats.m_Shots : -1;
+		const int Hits = pP ? pP->m_Stats.m_Hits : -1;
+		const int Kills = pP ? pP->m_Stats.m_Kills : -1;
+		const int Deaths = pP ? pP->m_Stats.m_Deaths : -1;
+		const int SpikeN = pP ? pP->m_Stats.m_GrabsNormal : -1;
+		const int SpikeT = pP ? pP->m_Stats.m_GrabsTeam : -1;
+		// fng_trainbot: every grab type, not just the two. fng.map carries
+		// green/purple/gold spikes (flag 0x100000 etc.), those deaths land in
+		// m_GrabsGreen/Purple/Gold, and a report that only shows normal and team
+		// reads as "no kills" while the bot is quietly scoring on purple.
+		const int SpikeG = pP ? pP->m_Stats.m_GrabsGreen : -1;
+		const int SpikeU = pP ? pP->m_Stats.m_GrabsPurple : -1;
+		const int SpikeD = pP ? pP->m_Stats.m_GrabsGold : -1;
+		const int SpikeW = pP ? pP->m_Stats.m_GrabsWrong : -1;
+		const int Unfroz = pP ? pP->m_Stats.m_Unfreezes : -1;
+		char aBuf[384];
 		str_format(aBuf, sizeof(aBuf),
-			"bot %d: trained k%.1f f%.1f r%.1f d%.1f | real k%.0f f%.0f r%.0f d%.0f | score %d | q-err %.2f upd %d | wswap %d",
+			"bot %d: trained k%.1f f%.1f r%.1f d%.1f | real k%.0f f%.0f r%.0f d%.0f | score %d | q-err %.2f upd %d | wswap %d\n"
+			"        GAME shots=%d hits=%d kills=%d deaths=%d spikeN=%d spikeT=%d spikeG=%d spikeU=%d spikeD=%d spikeW=%d unfroz=%d\n"
+			"        TICKS fire=%d aim=%d clear=%d blocked=%d frozenTgt=%d noTgt=%d held=%d\n"
+			"        THROW carried=%d preyFrozen=%d overheadPlan=%d sidewaysPlan=%d clusters=%d\n"
+			"        DRAG closer=%d farther=%d startGap=%d minGap=%d",
 			ClientID, m_aStatReward[BOTSTAT_KILL], m_aStatReward[BOTSTAT_FREEZE],
 			m_aStatReward[BOTSTAT_RESCUE], m_aStatReward[BOTSTAT_DEATH],
 			m_aStatReal[BOTSTAT_KILL], m_aStatReal[BOTSTAT_FREEZE],
 			m_aStatReal[BOTSTAT_RESCUE], m_aStatReal[BOTSTAT_DEATH],
-			Score, m_LastQError, m_NNUpdates, m_WeaponSwitchCount);
+			Score, m_LastQError, m_NNUpdates, m_WeaponSwitchCount,
+			Shots, Hits, Kills, Deaths, SpikeN, SpikeT, SpikeG, SpikeU, SpikeD, SpikeW, Unfroz,
+			m_TicksFiring, m_TicksAiming, m_TicksInLineOfSight,
+			m_TicksBlockedByTee, m_TicksTargetFrozen, m_TicksNoTarget,
+			m_LastHeldWeapon,
+			m_TicksCarried, m_ThrowPreyTicks, m_ThrowPlanOk, m_ThrowSidewaysOk,
+			m_ThrowClustersAvailable,
+			m_DragCloser, m_DragFarther, m_DragStartGap, m_DragMinGap);
 		pGS->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+		// the tick counters roll every minute alongside the reward window, so
+		// both halves describe the same minute and can be compared directly
+		m_TicksFiring = 0;
+		m_TicksAiming = 0;
+		m_TicksInLineOfSight = 0;
+		m_TicksBlockedByTee = 0;
+		m_TicksTargetFrozen = 0;
+		m_TicksNoTarget = 0;
+		m_WeaponSwitchCount = 0;
+		m_TicksCarried = 0;
+		m_ThrowPreyTicks = 0;
+		m_ThrowPlanOk = 0;
+		m_ThrowSidewaysOk = 0;
+		m_DragCloser = 0;
+		m_DragFarther = 0;
+		m_DragStartGap = 0;
+		m_DragMinGap = 0;
+		m_LastDragGap = 0.0f;
+		m_HasLastDragGap = 0;
 	}
 
 	// roll the window: the check is about the last minute, not all of history
@@ -1708,27 +1777,50 @@ void CBotAI::PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, 
 	if(!g_Config.m_SvBotThrow || pGS->m_NumBotThrowTargets <= 0)
 		return;
 
-	// the teeth have to be overhead: above the body, close to straight up, and
-	// within the height a 1.25s drag can actually lift
+	// fng_trainbot: which teeth to walk this body into.
+	//
+	// This used to accept exactly one shape — a cluster 110..470px ABOVE the
+	// body and within 200px horizontally — and to reject everything else. That
+	// shape comes from five recorded human throws, and it is simply not how FNG
+	// is played: overwhelmingly the kill is a body dragged *along the floor*
+	// into a horizontal stretch of spikes. Measured on a live run, a bot held a
+	// frozen enemy for 470 ticks and found a valid plan zero times, while plain
+	// same-level spikes sat within reach the whole while. Nothing after that
+	// point can score, because this is the only scoring play in the game.
+	//
+	// The physics is the same either way: the hook drags the body towards the
+	// hooker, so the bot walks towards the teeth and the body follows. What
+	// differs is only whether the body has to be lifted on the way or can be
+	// walked in on the level.
 	int BestT = -1;
 	float Best = 0.0f;
+	bool BestGround = false;
 	for(int t = 0; t < pGS->m_NumBotThrowTargets; t++)
 	{
 		const CGameContext::CBotThrowTarget &T = pGS->m_aBotThrowTargets[t];
 		if(!BotValidSpikeForTeam(T.m_Flags, MyTeam))
 			continue;
 		float dx = T.m_Pos.x - PreyPos.x;
-		float dy = T.m_Pos.y - PreyPos.y; // y grows downwards, so this is negative
-		if(dy > -110.0f)                  // not high enough to drop onto
+		float dy = T.m_Pos.y - PreyPos.y; // y grows downwards, so overhead is negative
+		float Dist = distance(PreyPos, T.m_Pos);
+		if(Dist > 850.0f)                  // too far to drag him on the rope
 			continue;
-		if(dy < -470.0f)                  // further than the rope can lift him
+
+		// overhead: proven geometry, the rope lifts the body onto the teeth
+		const bool Overhead = dy <= -110.0f && dy >= -470.0f && fabsf(dx) <= 200.0f;
+		// ground: the teeth are at or below the body's own level, which is what a
+		// drag along the shelf actually delivers into
+		const bool Ground = dy > -110.0f && Dist < 700.0f;
+		if(!Overhead && !Ground)
 			continue;
-		if(fabsf(dx) > 200.0f)            // the recorded throws were almost vertical
-			continue;
-		// straight up and near wins; the rest only if nothing better exists
-		float Score = -dy + fabsf(dx) * 0.7f + distance(MyPos, T.m_Pos) * 0.25f +
-			BotSpikePenalty(T.m_Flags) * 0.5f + frandom() * 60.0f;
-		// fng_trainbot: the book overrides opinion. If a player has already made
+
+		// near wins, team and normal teeth over gold and purple, and an overhead
+		// target is preferred over an equal ground one because the lift has been
+		// seen to work and the drag has not
+		float Score = Dist + BotSpikePenalty(T.m_Flags) * 0.5f + frandom() * 60.0f;
+		if(Overhead)
+			Score -= 220.0f;
+		// the book overrides opinion. If a player has already made
 		// this throw from somewhere near here and it landed, that is worth more
 		// than any rule of ours; and a cluster that has been tried enough times
 		// and never once worked is a cluster to leave alone.
@@ -1741,11 +1833,13 @@ void CBotAI::PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, 
 		{
 			Best = Score;
 			BestT = t;
+			BestGround = !Overhead;
 		}
 	}
 	if(BestT < 0)
 		return;
 	m_ThrowIdx = BestT;
+	m_ThrowIsGround = BestGround;
 
 	// fng_trainbot: stand at the body, not at the far end of a drag line. Every
 	// recorded throw started from next to the victim, and the rope only bites at
@@ -1760,6 +1854,26 @@ void CBotAI::PlanThrow(CGameContext *pGS, vec2 MyPos, vec2 PreyPos, int MyTeam, 
 		bool HaveLearned = pGS->BotRecipeStand(BT.m_Pos, PreyPos, &Learned);
 		if(HaveLearned)
 			m_ThrowStand = Learned;
+		else if(BestGround)
+		{
+			// fng_trainbot: a ground drag needs the hooker on the *far side* of
+			// the body from the teeth. The rope pulls the body towards whoever
+			// holds it, so standing between the body and the spikes would drag it
+			// away from them; standing beyond the body and walking in drags it
+			// onto them. This is the throw that actually happens in FNG, and the
+			// one the overhead-only plan could not express at all.
+			vec2 Away = PreyPos - BT.m_Pos;
+			float AwayLen = length(Away);
+			Away = AwayLen < 1.0f ? vec2(0.0f, 1.0f) : Away * (1.0f / AwayLen);
+			// 90px: far enough that the body actually starts moving before the
+			// hook's 1.25s runs out, close enough to stay well inside the 380px
+			// rope for the whole walk in. At 44px the body was nudged rather than
+			// dragged, which is why closer outnumbered farther on a live run.
+			m_ThrowStand = PreyPos + Away * 90.0f;
+			if(pGS->Collision()->GetCollisionAt(m_ThrowStand.x, m_ThrowStand.y) & BOT_DANGER_MASK ||
+				pGS->Collision()->GetCollisionAt(m_ThrowStand.x, m_ThrowStand.y - 24.0f) & BOT_DANGER_MASK)
+				m_ThrowStand = PreyPos;
+		}
 		else
 		{
 			// fng_trainbot: the hook pulls the body towards whoever holds the rope,
@@ -2111,6 +2225,37 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			m_HasTargetTransition = false;
 	}
 
+	// fng_trainbot: what happens while nobody is happening. Standing on a floor
+	// is free: no deaths, no shots, no reward either way, so every passive
+	// strategy ties for best and a linear bandit has no reason to leave it.
+	// Measured over a live run, 'patrol' was chosen 69% of the time and the
+	// bots barely fired. The fix is not a bigger weight on hunting — that is
+	// the same hand-written opinion in a different place. The fix is that
+	// *time spent not fighting has to cost something*, so that the value of
+	// engaging is measured against the value of standing still rather than
+	// against a constant.
+	if(pMe->IsAlive() && !pMe->IsFrozen() && Tick > m_ActionTick - 1000)
+	{
+		bool EnemyNear = false;
+		for(int i = 0; i < MAX_CLIENTS && !EnemyNear; i++)
+		{
+			if(i == ClientID || !pGS->m_apPlayers[i] || !BotIsEnemy(pSelf, pGS->m_apPlayers[i]))
+				continue;
+			CCharacter *pC = pGS->m_apPlayers[i]->GetCharacter();
+			if(pC && pC->IsAlive() && distance(MyPos, pC->m_Pos) < 1600.0f)
+				EnemyNear = true;
+		}
+		// one small debit per decision window (not per tick, which would drown
+		// the real rewards) when a game is going on and we are not in it. It is
+		// deliberately tiny next to a spike kill (+4) or even a freeze (+1): it
+		// only has to break the tie that makes idling and fighting look alike.
+		if(!EnemyNear && g_Config.m_SvBotLearn && Tick >= m_IdleChargeTick)
+		{
+			m_IdleChargeTick = Tick + pGS->Server()->TickSpeed() * 2;
+			RewardAction(pGS, m_Action, -0.12f);
+		}
+	}
+
 	// --- Choose a tactical action from the learned neural Q-network every few
 	// seconds. Actions without a valid target are masked; reward updates train
 	// the selected action for the observed state.
@@ -2154,8 +2299,20 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		if(BotIsEnemy(pSelf, p))
 		{
 			pTarget = p->GetCharacter();
-			if(pTarget && (!pTarget->IsAlive() || m_Strategy == BOTSTRAT_RESCUE ||
-				m_Strategy == BOTSTRAT_PATROL || m_Strategy == BOTSTRAT_HOLD))
+			// fng_trainbot: this used to throw the target away whenever the
+			// strategy was patrol, hold or rescue. Measured over a live run, the
+			// strategy was 'patrol' 69% of the time, so 82% of all ticks the bot
+			// had walked all the way to an enemy and then declined to shoot at
+			// him: the counters showed fire=1 per minute against aim=1. The
+			// target head spent all that time learning which enemy to walk to,
+			// and the shot was then thrown away before it was taken.
+			//
+			// The strategy is a statement about *what to do with* an enemy, not
+			// about whether one exists. Holding a floor still means shooting the
+			// man standing on it; rescuing a teammate still means the enemy who
+			// froze him has to be dealt with first. A dead target is the only
+			// reason to drop him here.
+			if(pTarget && !pTarget->IsAlive())
 				pTarget = 0;
 		}
 		else
@@ -2228,6 +2385,10 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		}
 		if(m_CarryTicks < 100000)
 			m_CarryTicks++;
+		// fng_trainbot: a body on the rope is the only state in which a spike
+		// kill is even possible, so "how long was it on the rope" is the single
+		// number that explains a zero on the scoreboard.
+		m_TicksCarried++;
 		if(m_CarryTicks == 1)
 			m_LastGrabTick = Tick;
 		// fng_trainbot: the rope lets go after ~1.25s, but the body stays
@@ -2300,6 +2461,47 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		m_HammerTick = Tick + 10;
 	}
 	bool HammerTactic = m_HammerIdx >= 0 && !pCarried && pPrey != 0 && !pMe->IsFrozen() && PreyMine;
+
+	// fng_trainbot: why is the throw never finished. A body only becomes a spike
+	// kill if somebody walks it onto the teeth, and the plan that used to drive
+	// that accepted exactly one shape: a cluster 110..470px ABOVE the body and
+	// within 200px horizontally. If a frozen body happens to lie next to a
+	// horizontal stretch of spikes — which is most of them — no cluster passes
+	// those three tests, BestT stays -1, and the bot quietly gives up on the
+	// only scoring play in FNG. Count what is actually reachable.
+	if(pPrey && g_Config.m_SvBotThrow && pGS->m_NumBotThrowTargets > 0)
+	{
+		int Sideways = 0, AnyTeam = 0;
+		float BestAbove = 1e9f;
+		float BestSide = 1e9f;
+		for(int t = 0; t < pGS->m_NumBotThrowTargets; t++)
+		{
+			const CGameContext::CBotThrowTarget &T = pGS->m_aBotThrowTargets[t];
+			if(!BotValidSpikeForTeam(T.m_Flags, MyTeam))
+				continue;
+			AnyTeam++;
+			float dx = T.m_Pos.x - pPrey->m_Pos.x;
+			float dy = T.m_Pos.y - pPrey->m_Pos.y; // y grows down, so this is negative
+			float Dist = distance(pPrey->m_Pos, T.m_Pos);
+			BestSide = min(BestSide, Dist);
+			// the old rule: overhead only
+			if(dy <= -110.0f && dy >= -470.0f && fabsf(dx) <= 200.0f)
+				BestAbove = min(BestAbove, Dist);
+			// the rule that actually exists in FNG: spikes on the same level,
+			// which is where a dragged body goes without any lifting at all
+			if(dy > -90.0f && dy < 90.0f && Dist < 900.0f)
+				Sideways++;
+		}
+		if(pPrey->IsFrozen())
+		{
+			m_ThrowPreyTicks++;
+			if(BestAbove < 1e8f)
+				m_ThrowPlanOk++;
+			if(Sideways > 0)
+				m_ThrowSidewaysOk++;
+			m_ThrowClustersAvailable = AnyTeam;
+		}
+	}
 	// the swing lands when the body is right in front of us (the hammer hit box
 	// is only about 35px wide) and we are on the far side of him, so the knock
 	// points at the cluster rather than away from it. Asking for the exact
@@ -2326,7 +2528,13 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		PlanThrow(pGS, MyPos, pCarried->m_Pos, MyTeam, Tick);
 
 	bool HaveSpike = pCarried && m_ThrowIdx >= 0;
-	vec2 SpikePos = HaveSpike ? pGS->m_aBotThrowTargets[m_ThrowIdx].m_Pos : MyPos;
+	// fng_trainbot: aim at a real spike tile, not at the middle of the cluster's
+	// bounding box. The drag was measured arriving within 6px of that centre and
+	// still scoring nothing, because for an L-shaped or diagonal cluster the
+	// centre of the box is an empty tile. m_Tile is the nearest genuine spike
+	// tile inside the cluster, so this is a sub-tile correction rather than a
+	// change of plan.
+	vec2 SpikePos = HaveSpike ? pGS->m_aBotThrowTargets[m_ThrowIdx].m_Tile : MyPos;
 	float SpikeR = HaveSpike ? pGS->m_aBotThrowTargets[m_ThrowIdx].m_Radius : 0.0f;
 
 	// --- fng_trainbot: floors, not tiles. A player who cannot reach a tee
@@ -2595,12 +2803,50 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	}
 	else if(pCarried)
 	{
-		// fng_trainbot: the recorded throws all went straight up. The feet line
-		// up under the teeth and then climb, and the rope walks the body up on
-		// top of the hooker. So: get under the cluster, then go up — never walk
-		// away along the shelf, which is what used to slide the body past the
-		// teeth and end 170..545px short every time.
-		if(HaveSpike)
+		// fng_trainbot: the two throws need opposite walking.
+		//
+		// Overhead (the recorded throws all went straight up): the feet line up
+		// under the teeth and then climb, so the bot moves under the body and
+		// goes up. Walking away along the shelf slides the body past the teeth
+		// and ends 170..545px short every time.
+		//
+		// Ground (the ordinary FNG kill): the rope drags the body towards the
+		// hooker, so the only way to walk a body onto horizontal spikes is to
+		// walk towards them and let it follow. The old code moved towards the
+		// *body* here, which is exactly backwards: it drags the corpse away
+		// from the teeth it is supposed to reach. The only thing that overrides
+		// that is rope length — past ~250px the hook lets go entirely.
+		if(HaveSpike && m_ThrowIsGround)
+		{
+			// fng_trainbot: drag properly instead of sprinting at the teeth.
+			//
+			// The rope is ~380px and lets go after 1.25s. Walking straight at the
+			// spikes outruns the body, the rope runs out, the bot has to turn round
+			// and come back — and the measurement showed exactly that: 45 ticks
+			// nearer and 21 farther, for a net gain of 4px. The body simply never
+			// arrived anywhere.
+			//
+			// So the bot does not aim at the teeth, it aims at a spot 70px
+			// *behind* the body on the line towards them. That keeps it in contact,
+			// keeps the rope taut, and walks the corpse forward at the speed the
+			// rope can actually deliver — which is slow, and is the only speed
+			// that works.
+			vec2 ToSpike = SpikePos - pCarried->m_Pos;
+			float ToSpikeLen = length(ToSpike);
+			ToSpike = ToSpikeLen < 1.0f ? vec2(1.0f, 0.0f) : ToSpike * (1.0f / ToSpikeLen);
+			vec2 Station = pCarried->m_Pos - ToSpike * 70.0f;
+			float dxStation = Station.x - MyPos.x;
+			// stay lined up with the body vertically as well, so the rope does not
+			// go slack over a ledge and slide off him
+			if(abs(pCarried->m_Pos.y - MyPos.y) > 60.0f)
+				Dir = 0;
+			else
+				Dir = fabsf(dxStation) > 10.0f ? (dxStation > 0.0f ? 1 : -1) : 0;
+			// and never walk into the teeth ourselves — the corpse goes first
+			if(Dir != 0 && BotDeadlyDrop(pGS, MyPos, Dir))
+				Dir = 0;
+		}
+		else if(HaveSpike)
 		{
 			float dxs = SpikePos.x - MyPos.x;
 			float dxsBody = pCarried->m_Pos.x - MyPos.x;
@@ -2837,7 +3083,12 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 			// below, and the guard must not forbid the throw itself.
 			bool ThrowDescent = pCarried && HaveSpike && MyPos.y < m_ThrowStand.y - 40.0f &&
 				fabsf(MyPos.x - m_ThrowStand.x) < 240.0f && BotDropIsSafe(pGS, MyPos, Dir);
-			if(!ThrowDescent)
+			// fng_trainbot: a ground drag never descends onto a lower shelf — the
+			// stand is 44px to the side of the body on its own level — so this
+			// guard, which exists for the overhead lift, was cancelling the walk
+			// that carries the body onto horizontal spikes. It now applies only to
+			// the lift, where dropping is genuinely part of the throw.
+			if(!ThrowDescent && !m_ThrowIsGround)
 			{
 				Dir = 0;
 				if(pCarried)
@@ -2958,7 +3209,16 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 						if(ds < Nearest)
 							Nearest = ds;
 					}
-					WorthIt = Nearest < 850.0f;
+					// fng_trainbot: only take the bait when the teeth are close enough
+					// to actually reach. The rope is ~380px and lets go after
+					// ~1.25s, so a body 700px from any spike has to be dragged the
+					// whole way in bursts, re-hooking every time — and every one of
+					// those bursts is a chance for somebody else to kill him, or for
+					// the freeze to run out. Measured on a live run, bots spent
+					// 264..645 ticks holding a body that had no spike within 700px,
+					// which is a body carried for nothing. Walk to a body whose
+					// teeth are in range instead.
+					WorthIt = Nearest < 420.0f;
 				}
 				if(WorthIt)
 					WantHook = true;
@@ -3037,7 +3297,55 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		}
 	}
 
+	if(pCarried && HaveSpike && m_ThrowIsGround)
+	{
+		// fng_trainbot: does the body actually reach the teeth? Every other
+		// counter says the plan exists; this one says whether following it works.
+		const float Gap = distance(pCarried->m_Pos, SpikePos);
+		if(!m_HasLastDragGap)
+		{
+			m_HasLastDragGap = 1;
+			m_LastDragGap = Gap;
+			m_DragStartGap = (int)Gap;
+			m_DragMinGap = (int)Gap;
+		}
+		else
+		{
+			if(Gap < m_LastDragGap)
+				m_DragCloser++;
+			else if(Gap > m_LastDragGap + 1.0f)
+				m_DragFarther++;
+			m_LastDragGap = Gap;
+			if((int)Gap < m_DragMinGap)
+				m_DragMinGap = (int)Gap;
+		}
+	}
+	else
+		m_HasLastDragGap = 0;
+
 	// --- shooting ---
+	// fng_trainbot: measure the shooting decision where it is actually made, so
+	// the log can say *why* a bot standing next to an enemy is not killing it.
+	// Those cases look identical from the outside but are entirely different
+	// bugs: no target, target already frozen, a frozen teammate eating the line,
+	// or the rifle not being in hand at all.
+	if(!pTarget)
+		m_TicksNoTarget++;
+	else if(pTarget->IsFrozen())
+		m_TicksTargetFrozen++;
+	else
+	{
+		float dT = distance(MyPos, pTarget->m_Pos);
+		if(dT > 20.0f && dT < 780.0f && BotLineOfSight(pGS, MyPos, pTarget->m_Pos))
+		{
+			m_TicksAiming++;
+			if(BotTeeInLine(pGS, MyPos, pTarget->m_Pos, ClientID, pTarget))
+				m_TicksBlockedByTee++;
+			else
+				m_TicksInLineOfSight++;
+		}
+	}
+
 	bool Busy = m_BackoffTicks > 0 || JustReleased || Climbing || Boosting || pCarried || Swinging;
 	bool WantFire = false;
 	if(!Busy && !pMe->IsFrozen())
@@ -3377,7 +3685,14 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 	Input.m_Direction = Dir;
 	Input.m_Jump = WantJump ? 1 : 0;
 	if(WantFire)
+	{
+		// fng_trainbot: count the ticks where the trigger was actually pulled,
+		// as opposed to ticks where a shot was merely *possible*. The gap between
+		// "enemy in the line" and "trigger pulled" is where a bot silently stops
+		// killing, and it is invisible without a counter.
+		m_TicksFiring++;
 		m_FireState = (m_FireState + 1) & INPUT_STATE_MASK;
+	}
 	else if(m_FireState & 1)
 		m_FireState = (m_FireState + 1) & INPUT_STATE_MASK;
 	Input.m_Fire = m_FireState;
@@ -3399,6 +3714,10 @@ void CBotAI::Tick(CGameContext *pGS, int ClientID)
 		Input.m_WantedWeapon = Want + 1;
 	else
 		Input.m_WantedWeapon = 0;
+	// fng_trainbot: what is actually in hand, as opposed to what we asked for.
+	// The rifle is the only thing that freezes anybody in FNG, so if the bot
+	// spends the fight holding a hammer this number is the whole story.
+	m_LastHeldWeapon = pMe->GetActiveWeapon();
 
 	// fng_trainbot: the trace you actually need when the bots stand still and
 	// you cannot see why — where we are, where the goal is, and whether we

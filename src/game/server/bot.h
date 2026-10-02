@@ -228,6 +228,7 @@ private:
 	int m_ThrowIdx;        // chosen spike cluster, -1 = no plan
 	vec2 m_ThrowStand;     // spot to stand on while dragging
 	bool m_ThrowLearned;   // this stand came from the throw book, not from a rule
+	bool m_ThrowIsGround;  // teeth are at body level: walk him in, do not lift him
 	int m_ThrowTick;       // next moment to re-plan the throw
 	CCharacter *m_RegrabTarget; // victim we lost and must catch again
 	int m_RegrabUntil;     // keep chasing the dropped body until this tick
@@ -310,6 +311,38 @@ private:
 	// be measured (it should be a few per minute, not a few per second).
 	int m_WeaponCooldown;
 	int m_WeaponSwitchCount;
+	// fng_trainbot: the honest counters. Every previous fix to "they don't kill"
+	// was a guess about what the bot was doing; these record what it actually
+	// did, per tick, so the next one is a measurement.
+	int m_LastHeldWeapon;
+	int m_TicksFiring;      // ticks where the fire button was actually pressed
+	int m_TicksAiming;      // ticks where a live enemy was inside the rifle line
+	int m_TicksInLineOfSight;
+	int m_TicksBlockedByTee; // enemy in front, but a frozen teammate in the way
+	int m_TicksNoTarget;
+	int m_TicksTargetFrozen; // the only enemy we can see is already frozen
+	int m_IdleChargeTick;   // next debit for standing around while a game is on
+	// fng_trainbot: the throw pipeline, counted. m_ThrowPreyTicks is how long a
+	// frozen body was on the floor within reach of a plan; m_ThrowPlanOk is how
+	// often a cluster satisfied the old "overhead only" geometry; and
+	// m_ThrowSidewaysOk is how often plain same-level spikes — what a dragged
+	// body actually runs into — were right there and ignored.
+	int m_ThrowPreyTicks;
+	int m_ThrowPlanOk;
+	int m_ThrowSidewaysOk;
+	int m_TicksCarried;
+	int m_ThrowClustersAvailable;
+	// fng_trainbot: the decisive measurement for the throw. While a body is on the
+	// rope with a ground plan, does it actually get closer to the teeth? If these
+	// two counts are near zero the body is not moving at all; if they are equal
+	// it moves but not in the right direction; if closer wins and still no spike
+	// kill lands, it is arriving somewhere else entirely.
+	int m_DragCloser;
+	int m_DragFarther;
+	int m_DragStartGap;
+	int m_DragMinGap;
+	float m_LastDragGap;
+	int m_HasLastDragGap;
 
 	// fng_trainbot: reward-hacking check. Learning from my own reward function is
 	// only safe if I can see the function's score separately from the game's. So

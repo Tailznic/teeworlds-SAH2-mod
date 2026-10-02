@@ -286,7 +286,8 @@ public:
 	enum { MAX_BOT_THROW_TARGETS = 128 };
 	struct CBotThrowTarget
 	{
-		vec2 m_Pos;      // cluster centre
+		vec2 m_Pos;      // cluster centre — good for choosing, not for aiming at
+		vec2 m_Tile;     // an actual spike tile inside the cluster
 		int m_Flags;     // spike colour flags of the cluster
 		int m_Count;     // spike tiles in the cluster
 		float m_Radius;  // half diagonal: how close the drag line must pass

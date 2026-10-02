@@ -2198,11 +2198,33 @@ void CGameContext::CollectBotThrowTargets()
 			Sp++;
 			pSeen[y * W + x] = 1;
 			int MinX = x, MaxX = x, MinY = y, MaxY = y, Num = 0;
+			// fng_trainbot: keep one *real* spike tile per cluster.
+			//
+			// T.m_Pos below is the centre of the bounding box, and for an
+			// L-shaped or diagonal cluster that point is very often an empty
+			// tile. A body dragged exactly onto it touches nothing, so it lies
+			// there on the edge of the teeth and never dies — the drag looks
+			// perfect in the log and scores nothing. The death test only probes
+			// four points around the body's centre, so what matters is arriving
+			// on a genuine spike tile.
+			//
+			// The box centre is not known until the flood fill has finished, so
+			// the tiles are kept as they are popped and the one nearest that
+			// centre is chosen afterwards. Clusters are small; the cap below is
+			// a guard, not a limit anyone has hit.
+			int TileN = 0;
+			int aTileX[2048], aTileY[2048];
 			while(Sp > 0)
 			{
 				Sp--;
 				int cx = aStackX[Sp], cy = aStackY[Sp];
 				Num++;
+				if(TileN < 2048)
+				{
+					aTileX[TileN] = cx;
+					aTileY[TileN] = cy;
+					TileN++;
+				}
 				if(cx < MinX) MinX = cx;
 				if(cx > MaxX) MaxX = cx;
 				if(cy < MinY) MinY = cy;
@@ -2232,6 +2254,13 @@ void CGameContext::CollectBotThrowTargets()
 			}
 			CBotThrowTarget &T = m_aBotThrowTargets[m_NumBotThrowTargets];
 			T.m_Pos = vec2((MinX + MaxX + 1) * 16.0f, (MinY + MaxY + 1) * 16.0f);
+			T.m_Tile = T.m_Pos;
+			for(int i = 0; i < TileN; i++)
+			{
+				vec2 Cand(aTileX[i] * 32.0f + 16.0f, aTileY[i] * 32.0f + 16.0f);
+				if(distance(Cand, T.m_Pos) < distance(T.m_Tile, T.m_Pos))
+					T.m_Tile = Cand;
+			}
 			T.m_Flags = Kind;
 			T.m_Count = Num;
 			T.m_Radius = 0.5f * sqrtf((float)(MaxX - MinX + 1) * (MaxX - MinX + 1) +
